@@ -10,6 +10,12 @@ using UnityEngine.UI;
 public class MaterialTimeVarier : MonoBehaviour
 {
 	public float m_speedScalar = 1.0f;
+	public InputField m_xMinField;
+	public InputField m_xMaxField;
+	public InputField m_yMinField;
+	public InputField m_yMaxField;
+	public InputField m_outMinField;
+	public InputField m_outMaxField;
 	public InputField m_rField;
 	public InputField m_gField;
 	public InputField m_bField;
@@ -18,6 +24,13 @@ public class MaterialTimeVarier : MonoBehaviour
 	public Text m_bErrorText;
 
 
+	private float m_xMin;
+	private float m_xMax;
+	private float m_yMin;
+	private float m_yMax;
+	private float m_outMin;
+	private float m_outMax;
+
 	private Expression[] m_expressions;
 	private Color32[] m_colorArray;
 	private string[] m_expTextPrev = new string[] {};
@@ -25,6 +38,13 @@ public class MaterialTimeVarier : MonoBehaviour
 	private int m_pixelOffset = 0;
 	private int m_pixelOffsetStart = 0;
 
+	private bool m_isStale = true;
+
+
+	private void Start()
+	{
+		UpdateLimits();
+	}
 
 	void Update()
 	{
@@ -47,7 +67,7 @@ public class MaterialTimeVarier : MonoBehaviour
 		bool[] combineY = parsedExpText.Select(str => !str.Contains("[y]")).ToArray();
 		bool[] combineT = parsedExpText.Select(str => !str.Contains("[t]")).ToArray();
 
-		bool newUpdateCycle = newColorArray || !m_expTextPrev.SequenceEqual(parsedExpText);
+		bool newUpdateCycle = newColorArray || m_isStale || !m_expTextPrev.SequenceEqual(parsedExpText);
 		m_expTextPrev = parsedExpText;
 		if (newUpdateCycle)
 		{
@@ -62,7 +82,7 @@ public class MaterialTimeVarier : MonoBehaviour
 		if (combineXAll && combineY.All(b => b))
 		{
 			// only time-dependent; evaluate once and be done
-			byte[] colorNewValues = m_expressions.Select(exp => exp == null ? byte.MinValue : EvaluateToByte(exp)).ToArray();
+			byte[] colorNewValues = m_expressions.Select(exp => EvaluateToByte(exp)).ToArray();
 			Color32 colorNew = new Color32(colorNewValues[0], colorNewValues[1], colorNewValues[2], byte.MaxValue);
 			if (!newColorArray && ColorEqual(Array.Find(m_colorArray, color => !ColorEqual(color, colorNew)), new Color32()))
 			{
@@ -87,13 +107,6 @@ public class MaterialTimeVarier : MonoBehaviour
 					Color32 outputColor = new Color32(byte.MinValue, byte.MinValue, byte.MinValue, byte.MaxValue);
 					for (int i = 0, n = m_expressions.Length; i < n; ++i)
 					{
-						// skip evaluating while empty
-						Expression exp = m_expressions[i];
-						if (exp == null)
-						{
-							continue;
-						}
-
 						// combine w/ previous evaluation if possible
 						if (combineX[i] && x >= xInc)
 						{
@@ -102,10 +115,14 @@ public class MaterialTimeVarier : MonoBehaviour
 						}
 
 						// evaluate
-						exp.Parameters["x"] = x / (float)w;
-						if (x < pixelInc)
+						Expression exp = m_expressions[i];
+						if (!combineX[i])
 						{
-							exp.Parameters["y"] = y / (float)h;
+							exp.Parameters["x"] = Mathf.Lerp(m_xMin, m_xMax, x / (float)w);
+						}
+						if (!combineY[i] && x < pixelInc)
+						{
+							exp.Parameters["y"] = Mathf.Lerp(m_yMin, m_yMax, y / (float)h);
 						}
 						outputColor[i] = EvaluateToByte(exp);
 					}
@@ -129,8 +146,23 @@ public class MaterialTimeVarier : MonoBehaviour
 		// TODO: better way to force the Image component to refresh?
 		image.enabled = false;
 		image.enabled = true;
+
+		m_isStale = false;
 	}
 
+
+	public void UpdateLimits()
+	{
+		// get min/max limits
+		float.TryParse(m_xMinField.text, out m_xMin);
+		float.TryParse(m_xMaxField.text, out m_xMax);
+		float.TryParse(m_yMinField.text, out m_yMin);
+		float.TryParse(m_yMaxField.text, out m_yMax);
+		float.TryParse(m_outMinField.text, out m_outMin);
+		float.TryParse(m_outMaxField.text, out m_outMax);
+
+		m_isStale = true;
+	}
 
 	private Expression ExpressionFromField(InputField field, Text errorText, Expression fallback)
 	{
@@ -176,9 +208,7 @@ public class MaterialTimeVarier : MonoBehaviour
 
 	private byte EvaluateToByte(Expression exp)
 	{
-		object output = exp.Evaluate();
-		Assert.IsFalse(exp.HasErrors());
-		return (byte)(Convert.ToSingle(output) * byte.MaxValue);
+		return (byte)(Mathf.InverseLerp(m_outMin, m_outMax, exp == null ? 0.0f : Convert.ToSingle(exp.Evaluate())) * byte.MaxValue);
 	}
 
 	private bool ColorEqual(Color32 a, Color32 b)
