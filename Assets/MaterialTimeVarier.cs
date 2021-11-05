@@ -18,91 +18,171 @@ public class MaterialTimeVarier : MonoBehaviour
 	public Text m_bErrorText;
 
 
+	private Expression[] m_expressions;
+	private Color32[] m_colorArray;
+	private string[] m_expTextPrev = new string[] {};
+
+	private int m_pixelOffset = 0;
+	private int m_pixelOffsetStart = 0;
+
+
 	void Update()
 	{
 		// get expressions
 		// TODO: move out of per-frame logic?
-		InputField[] fields = { m_rField, m_gField, m_bField };
-		Expression[] expressions = fields.Select(field => ExpressionFromField(field)).ToArray();
-		Text[] errorTexts = { m_rErrorText, m_gErrorText, m_bErrorText };
+		ValueTuple<InputField, Text>[] fieldPairs = { (m_rField, m_rErrorText), (m_gField, m_gErrorText), (m_bField, m_bErrorText) };
+		m_expressions = m_expressions == null ? fieldPairs.Select(pair => ExpressionFromField(pair.Item1, pair.Item2, null)).ToArray() : fieldPairs.Zip(m_expressions, (pair, expPrev) => ExpressionFromField(pair.Item1, pair.Item2, expPrev)).ToArray();
 
-		// get texture
-		Material material = GetComponent<Image>().material;
-		Assert.IsNotNull(material);
-		Texture2D texture = (Texture2D)material.GetTexture("_MainTex");
-		if (texture == null)
+		// texture array
+		int pixelCount = Screen.width * Screen.height;
+		bool newColorArray = m_colorArray == null || m_colorArray.Length != pixelCount;
+		if (newColorArray)
 		{
-			texture = new Texture2D(Screen.width, Screen.height);
+			m_colorArray = new Color32[pixelCount];
 		}
 
-		// loop over pixels
-		// TODO: optimize!
-		Unity.Collections.NativeArray<Color32> outputColors = texture.GetRawTextureData<Color32>();
-		int outputIdx = 0;
-		bool hitError = false;
-		bool update = false;
-		for (int y = 0, h = texture.height; y < h; ++y)
+		// check for ways to skip/combine evaluations
+		string[] parsedExpText = m_expressions.Select(exp => exp == null ? "" : exp.ParsedExpression.ToString()).ToArray();
+		bool[] combineX = parsedExpText.Select(str => !str.Contains("[x]")).ToArray();
+		bool[] combineY = parsedExpText.Select(str => !str.Contains("[y]")).ToArray();
+		bool[] combineT = parsedExpText.Select(str => !str.Contains("[t]")).ToArray();
+
+		bool newUpdateCycle = newColorArray || !m_expTextPrev.SequenceEqual(parsedExpText);
+		m_expTextPrev = parsedExpText;
+		if (newUpdateCycle)
 		{
-			for (int x = 0, w = texture.width; x < w; ++x, ++outputIdx)
+			m_pixelOffsetStart = m_pixelOffset;
+		}
+		else if (combineT.All(b => b) && m_pixelOffset == m_pixelOffsetStart)
+		{
+			return; // nothing is time-dependent and we've already drawn all pixels
+		}
+
+		bool combineXAll = combineX.All(b => b);
+		if (combineXAll && combineY.All(b => b))
+		{
+			// only time-dependent; evaluate once and be done
+			byte[] colorNewValues = m_expressions.Select(exp => exp == null ? byte.MinValue : EvaluateToByte(exp)).ToArray();
+			Color32 colorNew = new Color32(colorNewValues[0], colorNewValues[1], colorNewValues[2], byte.MaxValue);
+			if (!newColorArray && ColorEqual(Array.Find(m_colorArray, color => !ColorEqual(color, colorNew)), new Color32()))
 			{
-				Color32 outputColor = new Color32(0, 0, 0, 255);
-				for (int i = 0, n = expressions.Length; i < n; ++i)
+				return; // the color array already contains only the correct color
+			}
+			m_colorArray = Enumerable.Repeat(colorNew, pixelCount).ToArray();
+		}
+		else
+		{
+			// determine loop density
+			int pixelInc = (combineX.Count(b => !b) + combineY.Count(b => !b) + combineT.Count(b => !b)) / 2 + 1;
+			int pixelIncSq = pixelInc * pixelInc;
+
+			// loop over pixels
+			// TODO: optimize more?
+			int xInc = combineXAll ? 1 : pixelInc;
+			int w = Screen.width;
+			for (int y = combineXAll ? m_pixelOffset : m_pixelOffset / pixelInc, h = Screen.height; y < h; y += pixelInc)
+			{
+				for (int x = (m_pixelOffset + y / pixelInc) % xInc, outputIdx = x + y * w; x < w; x += xInc, outputIdx += xInc)
 				{
-					// skip evaluating while empty
-					Expression exp = expressions[i];
-					if (exp == null)
+					Color32 outputColor = new Color32(byte.MinValue, byte.MinValue, byte.MinValue, byte.MaxValue);
+					for (int i = 0, n = m_expressions.Length; i < n; ++i)
 					{
-						continue;
+						// skip evaluating while empty
+						Expression exp = m_expressions[i];
+						if (exp == null)
+						{
+							continue;
+						}
+
+						// combine w/ previous evaluation if possible
+						if (combineX[i] && x >= xInc)
+						{
+							outputColor[i] = m_colorArray[outputIdx - xInc][i];
+							continue;
+						}
+
+						// evaluate
+						exp.Parameters["x"] = x / (float)w;
+						if (x < pixelInc)
+						{
+							exp.Parameters["y"] = y / (float)h;
+						}
+						outputColor[i] = EvaluateToByte(exp);
 					}
 
-					// attempt to evaluate
-					Text errorText = errorTexts[i];
-					try
-					{
-						exp.Parameters["x"] = x / (float)w;
-						exp.Parameters["y"] = y / (float)h;
-						object output = exp.Evaluate();
-						outputColor[i] = (byte)(Convert.ToSingle(output) * byte.MaxValue);
-						errorText.text = "";
-					}
-					catch (Exception e)
-					{
-						errorText.text = e.Message;
-						hitError = true;
-					}
-				}
-				if (hitError)
-				{
-					return;
-				}
-				if (outputColors[outputIdx].r != outputColor.r || outputColors[outputIdx].g != outputColor.g || outputColors[outputIdx].b != outputColor.b)
-				{
-					outputColors[outputIdx] = outputColor;
-					update = true;
+					// NOTE that we no longer check for differences per-pixel since the early-out for non-time-dependent expressions should take care of that more efficiently
+					m_colorArray[outputIdx] = outputColor;
 				}
 			}
+			m_pixelOffset = (m_pixelOffset + 1) % (combineXAll ? pixelInc : pixelIncSq);
 		}
 
 		// update GPU
-		// TODO: optimize!
-		if (update)
-		{
-			texture.Apply();
-			material.SetTexture("_MainTex", texture);
-		}
+		// TODO: optimize more?
+		Texture2D texture = new Texture2D(Screen.width, Screen.height, TextureFormat.RGBA32, false); // NOTE that we deliberately avoid reusing textures to allow asynchronous upload
+		Unity.Collections.NativeArray<Color32> internalArray = texture.GetRawTextureData<Color32>();
+		internalArray.CopyFrom(m_colorArray);
+		texture.Apply(false, true); // NOTE that we set the texture to non-readable here to enable asynchronous upload
+		Image image = GetComponent<Image>();
+		image.material.SetTexture("_MainTex", texture);
+
+		// TODO: better way to force the Image component to refresh?
+		image.enabled = false;
+		image.enabled = true;
 	}
 
 
-	private Expression ExpressionFromField(InputField field)
+	private Expression ExpressionFromField(InputField field, Text errorText, Expression fallback)
 	{
 		Assert.IsNotNull(field);
 		string text = field.text;
 		if (string.IsNullOrEmpty(text))
 		{
+			if (errorText != null)
+			{
+				errorText.text = "";
+			}
 			return null;
 		}
-		Expression exp = new Expression(text);
-		exp.Parameters.Add("t", Time.time * m_speedScalar);
-		return exp;
+
+		float tCur = Time.time * m_speedScalar;
+		try
+		{
+			Expression expNew = new Expression(text);
+			expNew.Parameters.Add("t", tCur);
+			expNew.Parameters.Add("x", 0.0f);
+			expNew.Parameters.Add("y", 0.0f);
+			expNew.Evaluate();
+
+			if (errorText != null)
+			{
+				errorText.text = "";
+			}
+			return expNew;
+		}
+		catch (Exception e)
+		{
+			if (errorText != null)
+			{
+				errorText.text = e.Message;
+			}
+			if (fallback != null)
+			{
+				fallback.Parameters["t"] = tCur;
+			}
+			return fallback;
+		}
+	}
+
+	private byte EvaluateToByte(Expression exp)
+	{
+		object output = exp.Evaluate();
+		Assert.IsFalse(exp.HasErrors());
+		return (byte)(Convert.ToSingle(output) * byte.MaxValue);
+	}
+
+	private bool ColorEqual(Color32 a, Color32 b)
+	{
+		return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a; // NOTE that the alpha compare is necessary despite our generated colors always having full alpha, due to needing to tell generated black apart from the default value
 	}
 }
