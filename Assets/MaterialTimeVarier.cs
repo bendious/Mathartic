@@ -22,6 +22,9 @@ public class MaterialTimeVarier : MonoBehaviour
 	public Text m_rErrorText;
 	public Text m_gErrorText;
 	public Text m_bErrorText;
+	public InputField m_paramNameField;
+	public InputField m_paramExpressionField;
+	public Text m_paramErrorText;
 
 
 	private float m_xMin;
@@ -32,6 +35,7 @@ public class MaterialTimeVarier : MonoBehaviour
 	private float m_outMax;
 
 	private Expression[] m_expressions;
+	private Expression m_paramExpression;
 	private Color32[] m_colorArray;
 	private string[] m_expTextPrev = new string[] {};
 
@@ -50,6 +54,7 @@ public class MaterialTimeVarier : MonoBehaviour
 	{
 		// get expressions
 		// TODO: move out of per-frame logic?
+		m_paramExpression = string.IsNullOrEmpty(m_paramNameField.text) ? null : ExpressionFromField(m_paramExpressionField, m_paramErrorText, m_paramExpression);
 		ValueTuple<InputField, Text>[] fieldPairs = { (m_rField, m_rErrorText), (m_gField, m_gErrorText), (m_bField, m_bErrorText) };
 		m_expressions = m_expressions == null ? fieldPairs.Select(pair => ExpressionFromField(pair.Item1, pair.Item2, null)).ToArray() : fieldPairs.Zip(m_expressions, (pair, expPrev) => ExpressionFromField(pair.Item1, pair.Item2, expPrev)).ToArray();
 
@@ -62,7 +67,7 @@ public class MaterialTimeVarier : MonoBehaviour
 		}
 
 		// check for ways to skip/combine evaluations
-		string[] parsedExpText = m_expressions.Select(exp => exp == null ? "" : exp.ParsedExpression.ToString()).ToArray();
+		string[] parsedExpText = m_expressions.Select(exp => exp == null ? "" : m_paramExpression == null ? exp.ParsedExpression.ToString() : exp.ParsedExpression.ToString().Replace('[' + m_paramNameField.text + ']', m_paramExpression.ParsedExpression.ToString())).ToArray();
 		bool[] combineX = parsedExpText.Select(str => !str.Contains("[x]")).ToArray();
 		bool[] combineY = parsedExpText.Select(str => !str.Contains("[y]")).ToArray();
 		bool[] combineT = parsedExpText.Select(str => !str.Contains("[t]")).ToArray();
@@ -82,7 +87,13 @@ public class MaterialTimeVarier : MonoBehaviour
 		if (combineXAll && combineY.All(b => b))
 		{
 			// only time-dependent; evaluate once and be done
-			byte[] colorNewValues = m_expressions.Select(exp => EvaluateToByte(exp)).ToArray();
+			byte[] colorNewValues = m_expressions.Select(exp => {
+				if (exp != null && m_paramExpression != null)
+				{
+					exp.Parameters[m_paramNameField.text] = m_paramExpression;
+				}
+				return EvaluateToByte(exp);
+			}).ToArray();
 			Color32 colorNew = new Color32(colorNewValues[0], colorNewValues[1], colorNewValues[2], byte.MaxValue);
 			if (!newColorArray && ColorEqual(Array.Find(m_colorArray, color => !ColorEqual(color, colorNew)), new Color32()))
 			{
@@ -118,11 +129,25 @@ public class MaterialTimeVarier : MonoBehaviour
 						Expression exp = m_expressions[i];
 						if (!combineX[i])
 						{
-							exp.Parameters["x"] = Mathf.Lerp(m_xMin, m_xMax, x / (float)w);
+							float xParamVal = Mathf.Lerp(m_xMin, m_xMax, x / (float)w);
+							exp.Parameters["x"] = xParamVal;
+							if (m_paramExpression != null)
+							{
+								m_paramExpression.Parameters["x"] = xParamVal;
+							}
 						}
 						if (!combineY[i] && x < pixelInc)
 						{
-							exp.Parameters["y"] = Mathf.Lerp(m_yMin, m_yMax, y / (float)h);
+							float yParamVal = Mathf.Lerp(m_yMin, m_yMax, y / (float)h);
+							exp.Parameters["y"] = yParamVal;
+							if (m_paramExpression != null)
+							{
+								m_paramExpression.Parameters["y"] = yParamVal;
+							}
+						}
+						if (exp != null && m_paramExpression != null)
+						{
+							exp.Parameters[m_paramNameField.text] = m_paramExpression;
 						}
 						outputColor[i] = EvaluateToByte(exp);
 					}
@@ -184,6 +209,10 @@ public class MaterialTimeVarier : MonoBehaviour
 			expNew.Parameters.Add("t", tCur);
 			expNew.Parameters.Add("x", 0.0f);
 			expNew.Parameters.Add("y", 0.0f);
+			if (!string.IsNullOrEmpty(m_paramNameField.text))
+			{
+				expNew.Parameters.Add(m_paramNameField.text, 0.0f);
+			}
 			expNew.Evaluate();
 
 			if (errorText != null)
