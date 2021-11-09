@@ -7,7 +7,6 @@ using UnityEngine.Assertions;
 using UnityEngine.UI;
 
 
-[RequireComponent(typeof(Image))]
 public class MaterialTimeVarier : MonoBehaviour
 {
 	public float m_speedScalar = 1.0f;
@@ -38,12 +37,6 @@ public class MaterialTimeVarier : MonoBehaviour
 	private Expression[] m_expressions;
 	private Expression[] m_paramExpressions;
 	private Color32[] m_colorArray;
-	private string[] m_expTextPrev = new string[] {};
-
-	private int m_pixelOffset = 0;
-	private int m_pixelOffsetStart = 0;
-
-	private bool m_isStale = true;
 
 
 	private void Start()
@@ -51,7 +44,8 @@ public class MaterialTimeVarier : MonoBehaviour
 		UpdateLimits();
 	}
 
-	void Update()
+
+	public void UpdateShader()
 	{
 		// get expressions
 		// TODO: move out of per-frame logic?
@@ -73,119 +67,42 @@ public class MaterialTimeVarier : MonoBehaviour
 		{
 			parsedExpText = Array.ConvertAll(parsedExpText, str => str.Replace('[' + tuple.Item1 + ']', tuple.Item2));
 		}
-		bool[] combineX = parsedExpText.Select(str => !str.Contains("[x]")).ToArray();
-		bool[] combineY = parsedExpText.Select(str => !str.Contains("[y]")).ToArray();
-		bool[] combineT = parsedExpText.Select(str => !str.Contains("[t]")).ToArray();
 
-		bool newUpdateCycle = newColorArray || m_isStale || !m_expTextPrev.SequenceEqual(parsedExpText);
-		m_expTextPrev = parsedExpText;
-		if (newUpdateCycle)
+		// write shader
+		string shaderStr = "static const float3 vertices[6] = {float3(1,-1,0),float3(-1,-1,0),float3(1,1,0), float3(-1,-1,0),float3(-1,1,0),float3(1,1,0)};";
+		shaderStr += "static const float2 uvs[6] = { float2(1, 0), float2(0, 0), float2(1, 1), float2(0, 0), float2(0, 1), float2(1, 1) };";
+
+		shaderStr += "void VSMain(out float4 vertex:SV_POSITION, out float2 uv:TEXCOORD0, in uint id:SV_VertexID)";
+		shaderStr += "{";
+		shaderStr += "	uv = uvs[id];";
+		shaderStr += "	vertex = float4(vertices[id], 1);";
+		shaderStr += "}";
+
+		shaderStr += "cbuffer Constants : register(b0) { float t; };";
+
+		shaderStr += "float4 PSMain(float4 vertex:SV_POSITION, float2 texcoord:TEXCOORD0) : SV_TARGET";
+		shaderStr += "{";
+		shaderStr += "	float x = lerp(" + m_xMin + ", " + m_xMax + ", " + "texcoord.x);";
+		shaderStr += "	float y = lerp(" + m_yMin + ", " + m_yMax + ", " + "texcoord.y);";
+		shaderStr += "	return float4(";
+
+		// TODO: iterate through parsed expression trees rather than relying on lowercased function strings all having HLSL equivalents?
+		foreach (string expStr in parsedExpText)
 		{
-			m_pixelOffsetStart = m_pixelOffset;
+			shaderStr += "(";
+			shaderStr += string.IsNullOrEmpty(expStr) ? "0.0" : expStr.ToLower().Replace("[", "").Replace("]", "");
+			shaderStr += " - " + m_outMin + ") / (" + m_outMax + " - " + m_outMin + ")"; // TODO: inverseLerp() function
+			shaderStr += ",";
 		}
-		else if (combineT.All(b => b) && m_pixelOffset == m_pixelOffsetStart)
-		{
-			return; // nothing is time-dependent and we've already drawn all pixels
-		}
+		shaderStr += " 1.0);";
+		shaderStr += "}";
 
-		bool combineXAll = combineX.All(b => b);
-		if (combineXAll && combineY.All(b => b))
-		{
-			// only time-dependent; evaluate once and be done
-			byte[] colorNewValues = m_expressions.Select(exp => {
-				if (exp != null)
-				{
-					foreach (ValueTuple<string, Expression> paramExp in m_paramFields.Zip(m_paramExpressions, (fields, exp) => (fields.Item1.text, exp)))
-					{
-						exp.Parameters[paramExp.Item1] = paramExp.Item2;
-					}
-				}
-				return EvaluateToByte(exp);
-			}).ToArray();
-			Color32 colorNew = new Color32(colorNewValues[0], colorNewValues[1], colorNewValues[2], byte.MaxValue);
-			if (!newColorArray && ColorEqual(Array.Find(m_colorArray, color => !ColorEqual(color, colorNew)), new Color32()))
-			{
-				return; // the color array already contains only the correct color
-			}
-			m_colorArray = Enumerable.Repeat(colorNew, pixelCount).ToArray();
-		}
-		else
-		{
-			// determine loop density
-			int pixelInc = (combineX.Count(b => !b) + combineY.Count(b => !b) + combineT.Count(b => !b)) / 2 + 1;
-			int pixelIncSq = pixelInc * pixelInc;
-
-			// loop over pixels
-			// TODO: optimize more?
-			int xInc = combineXAll ? 1 : pixelInc;
-			int w = Screen.width;
-			for (int y = combineXAll ? m_pixelOffset : m_pixelOffset / pixelInc, h = Screen.height; y < h; y += pixelInc)
-			{
-				for (int x = (m_pixelOffset + y / pixelInc) % xInc, outputIdx = x + y * w; x < w; x += xInc, outputIdx += xInc)
-				{
-					Color32 outputColor = new Color32(byte.MinValue, byte.MinValue, byte.MinValue, byte.MaxValue);
-					for (int i = 0, n = m_expressions.Length; i < n; ++i)
-					{
-						// combine w/ previous evaluation if possible
-						if (combineX[i] && x >= xInc)
-						{
-							outputColor[i] = m_colorArray[outputIdx - xInc][i];
-							continue;
-						}
-
-						// evaluate
-						Expression exp = m_expressions[i];
-						if (!combineX[i])
-						{
-							float xParamVal = Mathf.Lerp(m_xMin, m_xMax, x / (float)w);
-							exp.Parameters["x"] = xParamVal;
-							foreach (Expression paramExp in m_paramExpressions.Where(exp => exp != null))
-							{
-								paramExp.Parameters["x"] = xParamVal;
-							}
-						}
-						if (!combineY[i] && x < pixelInc)
-						{
-							float yParamVal = Mathf.Lerp(m_yMin, m_yMax, y / (float)h);
-							exp.Parameters["y"] = yParamVal;
-							foreach (Expression paramExp in m_paramExpressions.Where(exp => exp != null))
-							{
-								paramExp.Parameters["y"] = yParamVal;
-							}
-						}
-						if (exp != null)
-						{
-							foreach (ValueTuple<string, Expression> paramExp in m_paramFields.Zip(m_paramExpressions, (fields, exp) => (fields.Item1.text, exp)))
-							{
-								exp.Parameters[paramExp.Item1] = paramExp.Item2;
-							}
-						}
-						outputColor[i] = EvaluateToByte(exp);
-					}
-
-					// NOTE that we no longer check for differences per-pixel since the early-out for non-time-dependent expressions should take care of that more efficiently
-					m_colorArray[outputIdx] = outputColor;
-				}
-			}
-			m_pixelOffset = (m_pixelOffset + 1) % (combineXAll ? pixelInc : pixelIncSq);
-		}
-
-		// update GPU
-		// TODO: optimize more?
-		Texture2D texture = new Texture2D(Screen.width, Screen.height, TextureFormat.RGBA32, false); // NOTE that we deliberately avoid reusing textures to allow asynchronous upload
-		Unity.Collections.NativeArray<Color32> internalArray = texture.GetRawTextureData<Color32>();
-		internalArray.CopyFrom(m_colorArray);
-		texture.Apply(false, true); // NOTE that we set the texture to non-readable here to enable asynchronous upload
-		Image image = GetComponent<Image>();
-		image.material.SetTexture("_MainTex", texture);
-
-		// TODO: better way to force the Image component to refresh?
-		image.enabled = false;
-		image.enabled = true;
-
-		m_isStale = false;
+		// compile shader
+		UnityEngine.Windows.File.WriteAllBytes(System.IO.Path.Combine(Application.streamingAssetsPath, "userspecified.hlsl"), System.Text.Encoding.UTF8.GetBytes(shaderStr)); // TODO: avoid writing to file to work in WebGL
+		PostProcessingMod shaderComp = Camera.main.GetComponent<PostProcessingMod>();
+		shaderComp.m_filename = "userspecified.hlsl";
+		shaderComp.Start();
 	}
-
 
 	public void UpdateLimits()
 	{
@@ -197,7 +114,7 @@ public class MaterialTimeVarier : MonoBehaviour
 		float.TryParse(m_outMinField.text, out m_outMin);
 		float.TryParse(m_outMaxField.text, out m_outMax);
 
-		m_isStale = true;
+		UpdateShader(); // TODO: only if necessary?
 	}
 
 	public void UpdateParamFields()
@@ -217,6 +134,8 @@ public class MaterialTimeVarier : MonoBehaviour
 			paramFieldsList.Add((inputFields.First(), inputFields.Last(), child.GetComponentsInChildren<Text>().Last()));
 		}
 		m_paramFields = paramFieldsList.ToArray();
+
+		UpdateShader(); // TODO: only if necessary?
 	}
 
 
@@ -276,15 +195,5 @@ public class MaterialTimeVarier : MonoBehaviour
 			}
 			return fallback;
 		}
-	}
-
-	private byte EvaluateToByte(Expression exp)
-	{
-		return (byte)(Mathf.InverseLerp(m_outMin, m_outMax, exp == null ? 0.0f : Convert.ToSingle(exp.Evaluate())) * byte.MaxValue);
-	}
-
-	private bool ColorEqual(Color32 a, Color32 b)
-	{
-		return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a; // NOTE that the alpha compare is necessary despite our generated colors always having full alpha, due to needing to tell generated black apart from the default value
 	}
 }
