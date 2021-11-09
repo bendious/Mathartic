@@ -5,13 +5,25 @@ using UnityEngine;
 
 public class PostProcessingMod : MonoBehaviour
 {
+#if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
 	[DllImport("PostProcessingMod")]
+#endif
 	static extern IntPtr Execute();
 
+#if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
 	[DllImport("PostProcessingMod")]
+#endif
 	static extern void SetTime(float time);
 
+#if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
 	[DllImport("PostProcessingMod")]
+#endif
 	static extern bool Init([MarshalAs(UnmanagedType.LPStr)] string pSrcData, [MarshalAs(UnmanagedType.U8)] int SrcDataSize);
 
 	bool _Success = false;
