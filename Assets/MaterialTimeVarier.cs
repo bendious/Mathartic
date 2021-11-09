@@ -98,10 +98,7 @@ public class MaterialTimeVarier : MonoBehaviour
 		shaderStr += "}";
 
 		// compile shader
-		UnityEngine.Windows.File.WriteAllBytes(System.IO.Path.Combine(Application.streamingAssetsPath, "userspecified.hlsl"), System.Text.Encoding.UTF8.GetBytes(shaderStr)); // TODO: avoid writing to file to work in WebGL
-		PostProcessingMod shaderComp = Camera.main.GetComponent<PostProcessingMod>();
-		shaderComp.m_filename = "userspecified.hlsl";
-		shaderComp.Start();
+		Camera.main.GetComponent<PostProcessingMod>().UpdateShader(shaderStr);
 	}
 
 	public void UpdateLimits()

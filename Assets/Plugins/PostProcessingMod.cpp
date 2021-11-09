@@ -12,10 +12,6 @@ static ID3DBlob *VSblob;
 static ID3DBlob *PSblob;
 static ID3DBlob *VSerror;
 static ID3DBlob *PSerror;
-static ID3D11ShaderResourceView *srvc;
-static ID3D11ShaderResourceView *srvd;
-static ID3D11Resource *colormap;
-static ID3D11Resource *depthmap;
 static ID3D11Buffer *buffer;
 static float time;
 
@@ -73,12 +69,6 @@ typedef void (__stdcall* UnregisterDeviceEventCallback)(IUnityGraphicsDeviceEven
 static IUnityInterfaces* s_UnityInterfaces;
 static UnityGfxRenderer DeviceType = kUnityGfxRendererNull;
 
-extern "C" void __declspec(dllexport) __stdcall SetTextures (void* color, void* depth)
-{
-	colormap = (ID3D11Resource*)(color);
-	depthmap = (ID3D11Resource*)(depth);
-}
-
 extern "C" void __declspec(dllexport) __stdcall SetTime (float t)
 {
 	time = t;
@@ -99,16 +89,18 @@ bool IsCompiled (ID3DBlob* error, HRESULT result)
 	return true;
 }
 
-extern "C" bool __declspec(dllexport) __stdcall Init(LPCWSTR pFileName)
+extern "C" bool __declspec(dllexport) __stdcall Init(LPCSTR pSrcData, SIZE_T SrcDataSize)
 {
+	constexpr const char *const pFilename = "userdefined.hlsl";
+
 	DeviceType = kUnityGfxRendererD3D11;
 	IUnityGraphicsD3D11* d3d = s_UnityInterfaces->Get<IUnityGraphicsD3D11>();
 	device = d3d->GetDevice();
 	device->GetImmediateContext(&context);
-	HRESULT VSresult = D3DCompileFromFile(pFileName, 0, 0, "VSMain", "vs_5_0", 1 << 15, 0, &VSblob, &VSerror);
+	HRESULT VSresult = D3DCompile(pSrcData, SrcDataSize, pFilename, 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &VSblob, &VSerror);
 	if (!IsCompiled(VSerror, VSresult)) return false;
 	device->CreateVertexShader(VSblob->GetBufferPointer(), VSblob->GetBufferSize(), 0, &vs);
-	HRESULT PSresult = D3DCompileFromFile(pFileName, 0, 0, "PSMain", "ps_5_0", 1 << 15, 0, &PSblob, &PSerror);
+	HRESULT PSresult = D3DCompile(pSrcData, SrcDataSize, pFilename, 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &PSblob, &PSerror);
 	if (!IsCompiled(PSerror, PSresult)) return false;
 	device->CreatePixelShader(PSblob->GetBufferPointer(), PSblob->GetBufferSize(), 0, &ps);
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -121,17 +113,9 @@ void Update()
 {
 	context->VSSetShader(vs, 0, 0);
 	context->PSSetShader(ps, 0, 0);
-	device->CreateShaderResourceView(colormap, 0, &srvc);
-	device->CreateShaderResourceView(depthmap, 0, &srvd);
-	context->PSSetShaderResources(0, 1, &srvc);
-	context->PSSetShaderResources(1, 1, &srvd);
 	context->UpdateSubresource(buffer, 0, 0, &time, 4, 4);
 	context->PSSetConstantBuffers(0, 1, &buffer );
 	context->Draw(6, 0);
-	srvc->Release();
-	srvd->Release();
-	colormap->Release();
-	depthmap->Release();
 }
 
 void Release()
@@ -141,10 +125,6 @@ void Release()
 	if (VSblob) VSblob->Release();
 	if (PSblob) PSblob->Release();
 	if (buffer) buffer->Release();
-	if (srvc) srvc->Release();
-	if (srvd) srvd->Release();
-	if (colormap) colormap->Release();
-	if (depthmap) depthmap->Release();
 	if (context) context->Release();
 	if (device) device->Release();
 }
