@@ -24,16 +24,17 @@ public class PostProcessingMod : MonoBehaviour
 #else
 	[DllImport("PostProcessingMod")]
 #endif
-	static extern bool Init([MarshalAs(UnmanagedType.LPStr)] string pSrcData, [MarshalAs(UnmanagedType.U8)] int SrcDataSize);
+	static extern bool UpdateGLShader([MarshalAs(UnmanagedType.LPStr)] string pSrcDataVert, [MarshalAs(UnmanagedType.LPStr)] string pSrcDataFrag);
+
 
 	bool _Success = false;
 
 
-	public void UpdateShader(string srcData)
+	public void UpdateShader(string srcDataVert, string srcDataFrag)
 	{
 		try
 		{
-			_Success = Init(srcData, srcData.Length);
+			_Success = UpdateGLShader(srcDataVert, srcDataFrag);
 		}
 		catch (Exception) { _Success = false; }
 	}
@@ -41,11 +42,11 @@ public class PostProcessingMod : MonoBehaviour
 
 	void OnRenderImage (RenderTexture source, RenderTexture destination)
 	{
+		Graphics.Blit(source, destination);
 		if (_Success)
 		{
 			SetTime(Time.time);
+			GL.IssuePluginEvent(Execute(), 1);
 		}
-		Graphics.Blit(source, destination);
-		if (_Success) GL.IssuePluginEvent(Execute(), 1);
 	}
 }

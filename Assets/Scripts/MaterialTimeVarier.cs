@@ -68,37 +68,43 @@ public class MaterialTimeVarier : MonoBehaviour
 			parsedExpText = Array.ConvertAll(parsedExpText, str => str.Replace('[' + tuple.Item1 + ']', tuple.Item2));
 		}
 
-		// write shader
-		string shaderStr = "static const float3 vertices[6] = {float3(1,-1,0),float3(-1,-1,0),float3(1,1,0), float3(-1,-1,0),float3(-1,1,0),float3(1,1,0)};";
-		shaderStr += "static const float2 uvs[6] = { float2(1, 0), float2(0, 0), float2(1, 1), float2(0, 0), float2(0, 1), float2(1, 1) };";
+		// write shaders
+		// TODO: account for different GLSL versions?
+		string shaderStrVert = "#version 150\n";
+		shaderStrVert += "const vec3 vertices[6] = vec3[](vec3(1,-1,0), vec3(-1,-1,0), vec3(1,1,0), vec3(-1,-1,0), vec3(-1,1,0), vec3(1,1,0));\n";
+		shaderStrVert += "const vec2 uvs[6] = vec2[](vec2(1, 0), vec2(0, 0), vec2(1, 1), vec2(0, 0), vec2(0, 1), vec2(1, 1));\n";
+		shaderStrVert += "out vec2 texCoord;\n";
 
-		shaderStr += "void VSMain(out float4 vertex:SV_POSITION, out float2 uv:TEXCOORD0, in uint id:SV_VertexID)";
-		shaderStr += "{";
-		shaderStr += "	uv = uvs[id];";
-		shaderStr += "	vertex = float4(vertices[id], 1);";
-		shaderStr += "}";
+		shaderStrVert += "void main()\n";
+		shaderStrVert += "{\n";
+		shaderStrVert += "	texCoord = uvs[gl_VertexID];\n";
+		shaderStrVert += "	gl_Position = vec4(vertices[gl_VertexID], 1);\n";
+		shaderStrVert += "}\n";
 
-		shaderStr += "cbuffer Constants : register(b0) { float t; };";
+		string shaderStrFrag = "#version 150\n";
+		shaderStrFrag += "uniform float t;\n";
+		shaderStrFrag += "in vec2 texCoord;\n";
+		shaderStrFrag += "out lowp vec4 fragColor;\n";
 
-		shaderStr += "float4 PSMain(float4 vertex:SV_POSITION, float2 texcoord:TEXCOORD0) : SV_TARGET";
-		shaderStr += "{";
-		shaderStr += "	float x = lerp(" + m_xMin + ", " + m_xMax + ", " + "texcoord.x);";
-		shaderStr += "	float y = lerp(" + m_yMin + ", " + m_yMax + ", " + "texcoord.y);";
-		shaderStr += "	return float4(";
+		shaderStrFrag += "void main()\n";
+		shaderStrFrag += "{\n";
+		shaderStrFrag += "	float x = mix(" + m_xMin + ", " + m_xMax + ", " + "texCoord.x);\n";
+		shaderStrFrag += "	float y = mix(" + m_yMin + ", " + m_yMax + ", " + "texCoord.y);\n";
+		shaderStrFrag += "	fragColor = vec4(";
 
 		// TODO: iterate through parsed expression trees rather than relying on lowercased function strings all having HLSL equivalents?
 		foreach (string expStr in parsedExpText)
 		{
-			shaderStr += "(";
-			shaderStr += string.IsNullOrEmpty(expStr) ? "0.0" : expStr.ToLower().Replace("[", "").Replace("]", "");
-			shaderStr += " - " + m_outMin + ") / (" + m_outMax + " - " + m_outMin + ")"; // TODO: inverseLerp() function
-			shaderStr += ",";
+			shaderStrFrag += "(";
+			shaderStrFrag += string.IsNullOrEmpty(expStr) ? "0.0" : expStr.ToLower().Replace("[", "").Replace("]", "");
+			shaderStrFrag += " - " + m_outMin + ") / (" + m_outMax + " - " + m_outMin + ")"; // TODO: inverseLerp() function
+			shaderStrFrag += ",";
 		}
-		shaderStr += " 1.0);";
-		shaderStr += "}";
+		shaderStrFrag += " 1.0);\n";
+		shaderStrFrag += "}\n";
 
 		// compile shader
-		Camera.main.GetComponent<PostProcessingMod>().UpdateShader(shaderStr);
+		Camera.main.GetComponent<PostProcessingMod>().UpdateShader(shaderStrVert, shaderStrFrag);
 	}
 
 	public void UpdateLimits()

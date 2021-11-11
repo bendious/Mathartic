@@ -1,162 +1,207 @@
-//For x64 Visual Studio command line:  cl.exe /LD PostProcessingMod.cpp d3d11.lib dxguid.lib user32.lib kernel32.lib gdi32.lib d3dcompiler.lib
+//For x64 Visual Studio command line:  cl.exe /LD /D GLEW_STATIC PostProcessingMod.cpp GLEW/glew.c opengl32.lib
 
-#include <d3d11.h>
-#include <d3dcompiler.h>
+#include "Unity/PlatformBase.h"
+#include "Unity/IUnityGraphics.h"
+
+#if UNITY_IPHONE
+#include <OpenGLES/ES2/gl.h>
+#elif UNITY_ANDROID || UNITY_WEBGL
+#include <GLES2/gl2.h>
+#else
+#if !defined(SUPPORT_OPENGL_CORE)
+#error "Unsupported rendering environment"
+#endif
+#include "GLEW/glew.h"
+#endif
+
+#if defined(DEBUG)
+#include <cstring>
 #include <stdio.h>
+#endif
 
-static ID3D11Device *device;
-static ID3D11DeviceContext *context;
-static ID3D11VertexShader *vs;
-static ID3D11PixelShader *ps;
-static ID3DBlob *VSblob;
-static ID3DBlob *PSblob;
-static ID3DBlob *VSerror;
-static ID3DBlob *PSerror;
-static ID3D11Buffer *buffer;
-static float time;
 
-typedef enum UnityGfxRenderer
-{
-	kUnityGfxRendererD3D11 = 2,
-	kUnityGfxRendererNull = 4,
-} UnityGfxRenderer;
-
-typedef enum UnityGfxDeviceEventType
-{
-	kUnityGfxDeviceEventInitialize = 0,
-	kUnityGfxDeviceEventShutdown = 1,
-	kUnityGfxDeviceEventBeforeReset = 2,
-	kUnityGfxDeviceEventAfterReset = 3,
-} UnityGfxDeviceEventType;
+#define CEXPORT(return_type) extern "C" return_type __declspec(dllexport) __stdcall
 
 typedef void (__stdcall* IUnityGraphicsDeviceEventCallback)(UnityGfxDeviceEventType eventType);
-
-struct UnityInterfaceGUID
-{
-	UnityInterfaceGUID(unsigned long long high, unsigned long long low) : m_GUIDHigh(high) , m_GUIDLow(low) { }
-	unsigned long long m_GUIDHigh;
-	unsigned long long m_GUIDLow;
-};
-
-struct IUnityInterfaces
-{
-	void* (__stdcall* GetInterface)(UnityInterfaceGUID guid);
-	void (__stdcall* RegisterInterface)(UnityInterfaceGUID guid, void *ptr);
-	template<typename INTERFACE>
-	INTERFACE* Get()
-	{
-		return static_cast<INTERFACE*>(GetInterface(UnityInterfaceGUID(0xAAB37EF87A87D748ULL, 0xBF76967F07EFB177ULL)));
-	}
-	void Register(void* ptr)
-	{
-		RegisterInterface(UnityInterfaceGUID(0xAAB37EF87A87D748ULL, 0xBF76967F07EFB177ULL), ptr);
-	}
-};
-
-struct IUnityGraphics
-{
-	void (__stdcall* RegisterDeviceEventCallback)(IUnityGraphicsDeviceEventCallback callback);
-};
-
-struct IUnityGraphicsD3D11
-{
-	ID3D11Device* (__stdcall * GetDevice)();
-};
-
-typedef void (__stdcall* UnityRenderingEvent)(int eventId);
 typedef void (__stdcall* UnregisterDeviceEventCallback)(IUnityGraphicsDeviceEventCallback callback);
 
-static IUnityInterfaces* s_UnityInterfaces;
-static UnityGfxRenderer DeviceType = kUnityGfxRendererNull;
 
-extern "C" void __declspec(dllexport) __stdcall SetTime (float t)
-{
-	time = t;
+static IUnityInterfaces* s_UnityInterfaces_p = nullptr;
+
+static GLuint s_VertexShader;
+static GLuint s_FragmentShader;
+static GLuint s_Program;
+static GLint s_UniformTime;
+
+static float s_TimeVal;
+
+
+#if defined(DEBUG)
+#define DEBUG_LOG(str) {\
+	FILE* file = fopen("debug.log", "a"); \
+	fwrite(str, 1, strlen(str), file); \
+	fclose(file); \
+}
+#else
+#define DEBUG_LOG(...)
+#endif
+
+#define AssertLogRV(condition, rv)\
+{\
+	if (!(condition)) {\
+		DEBUG_LOG(#condition "\n");\
+		return rv;\
+	}\
 }
 
-bool IsCompiled (ID3DBlob* error, HRESULT result)
+#define AssertLog(condition) AssertLogRV(condition, )
+
+
+static GLuint CreateShader(GLenum type, const char* sourceText, GLuint prev)
 {
-	if (result != S_OK)
-	{
-		if (error)
-		{
-			FILE* file = fopen ("debug.log", "a");
-			fwrite(error->GetBufferPointer(), 1, error->GetBufferSize(), file);
-			fclose (file);
-		}
-		return false;
+	AssertLogRV(sourceText != nullptr && glGetError() == GL_NO_ERROR, 0U);
+	DEBUG_LOG(sourceText);
+
+	// compile
+	GLuint shaderH = (prev == 0U) ? glCreateShader(type) : prev;
+	AssertLogRV(shaderH != 0U, 0U);
+	glShaderSource(shaderH, 1, &sourceText, NULL);
+	glCompileShader(shaderH);
+
+#if defined(DEBUG)
+	// check errors
+	GLsizei log_length = 0;
+	GLchar message[1024];
+	glGetShaderInfoLog(shaderH, 1024, &log_length, message);
+	if (log_length > 0) {
+		DEBUG_LOG(message);
 	}
-	return true;
-}
+	int compileState;
+	glGetShaderiv(shaderH, GL_COMPILE_STATUS, &compileState);
+	AssertLogRV(log_length == 0 && compileState == GL_TRUE && glGetError() == GL_NO_ERROR, shaderH);
+#endif
 
-extern "C" bool __declspec(dllexport) __stdcall Init(LPCSTR pSrcData, SIZE_T SrcDataSize)
-{
-	constexpr const char *const pFilename = "userdefined.hlsl";
-
-	DeviceType = kUnityGfxRendererD3D11;
-	IUnityGraphicsD3D11* d3d = s_UnityInterfaces->Get<IUnityGraphicsD3D11>();
-	device = d3d->GetDevice();
-	device->GetImmediateContext(&context);
-	HRESULT VSresult = D3DCompile(pSrcData, SrcDataSize, pFilename, 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &VSblob, &VSerror);
-	if (!IsCompiled(VSerror, VSresult)) return false;
-	device->CreateVertexShader(VSblob->GetBufferPointer(), VSblob->GetBufferSize(), 0, &vs);
-	HRESULT PSresult = D3DCompile(pSrcData, SrcDataSize, pFilename, 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &PSblob, &PSerror);
-	if (!IsCompiled(PSerror, PSresult)) return false;
-	device->CreatePixelShader(PSblob->GetBufferPointer(), PSblob->GetBufferSize(), 0, &ps);
-	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	D3D11_BUFFER_DESC desc = {16, D3D11_USAGE_DEFAULT, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0};
-	device->CreateBuffer(&desc, 0, &buffer);
-	return true;
-}
-
-void Update()
-{
-	context->VSSetShader(vs, 0, 0);
-	context->PSSetShader(ps, 0, 0);
-	context->UpdateSubresource(buffer, 0, 0, &time, 4, 4);
-	context->PSSetConstantBuffers(0, 1, &buffer );
-	context->Draw(6, 0);
-}
-
-void Release()
-{
-	if (vs) vs->Release();
-	if (ps) ps->Release();
-	if (VSblob) VSblob->Release();
-	if (PSblob) PSblob->Release();
-	if (buffer) buffer->Release();
-	if (context) context->Release();
-	if (device) device->Release();
+	return shaderH;
 }
 
 static void __stdcall OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
 {
-	if (eventType == kUnityGfxDeviceEventShutdown)
-	{
-		DeviceType = kUnityGfxRendererNull;
-		Release();
+	if (eventType == kUnityGfxDeviceEventShutdown) {
+		if (s_VertexShader != 0U) {
+			glDeleteShader(s_VertexShader);
+		}
+		if (s_FragmentShader != 0U) {
+			glDeleteShader(s_FragmentShader);
+		}
+		if (s_Program != 0U) {
+			glDeleteProgram(s_Program);
+		}
 	}
 }
 
-static void __stdcall OnRenderEvent(int eventID)
+static void __stdcall OnRenderEvent(int /*eventID*/) // NOTE the assumption that we're only being called here for rendering
 {
-	Update();
+	if (s_Program == 0U) {
+		return; // avoid crashing if called prematurely or after being given invalid shader code
+	}
+
+	// set basic render state
+	AssertLog(glGetError() == GL_NO_ERROR);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_BLEND);
+	glDepthFunc(GL_LEQUAL);
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+
+	// render w/ shader program
+	glUseProgram(s_Program);
+	glUniform1f(s_UniformTime, s_TimeVal);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	AssertLog(glGetError() == GL_NO_ERROR);
 }
 
-extern "C" void __declspec(dllexport) __stdcall UnityPluginLoad(IUnityInterfaces* unityInterfaces)
+
+CEXPORT(bool) UpdateGLShader(const char *const pSrcDataVert, const char *const pSrcDataFrag)
 {
-	s_UnityInterfaces = unityInterfaces;
-	IUnityGraphics* s_Graphics = s_UnityInterfaces->Get<IUnityGraphics>();
-	s_Graphics->RegisterDeviceEventCallback(OnGraphicsDeviceEvent);
-	OnGraphicsDeviceEvent(kUnityGfxDeviceEventInitialize);
+	AssertLogRV(s_UnityInterfaces_p != nullptr, false);
+	IUnityGraphics *const graphics_p = s_UnityInterfaces_p->Get<IUnityGraphics>();
+	AssertLogRV(graphics_p != nullptr, false);
+	static UnityGfxRenderer ApiType = graphics_p->GetRenderer();
+
+	AssertLogRV(ApiType == kUnityGfxRendererOpenGL || ApiType == kUnityGfxRendererOpenGLES20 || ApiType == kUnityGfxRendererOpenGLES30 || ApiType == kUnityGfxRendererOpenGLCore, false);
+	if (s_Program == 0) {
+		// init system
+#if SUPPORT_OPENGL_CORE
+		if (ApiType == kUnityGfxRendererOpenGLCore) {
+			glewExperimental = GL_TRUE;
+			glewInit();
+			glGetError(); // Clean up error generated by glewInit
+		}
+#endif // if SUPPORT_OPENGL_CORE
+	} else {
+		// clean up any errors we might be coming in with
+		GLenum err;
+		int failsafe = 0;
+		do {
+			err = glGetError();
+			++failsafe;
+		} while (err != GL_NO_ERROR && failsafe < 100);
+	}
+	AssertLogRV(glGetError() == GL_NO_ERROR, false);
+
+	// create shaders
+	AssertLogRV(pSrcDataVert != nullptr && pSrcDataFrag != nullptr, false);
+	s_VertexShader = CreateShader(GL_VERTEX_SHADER, pSrcDataVert, s_VertexShader);
+	s_FragmentShader = CreateShader(GL_FRAGMENT_SHADER, pSrcDataFrag, s_FragmentShader);
+	AssertLogRV(s_VertexShader != 0U && s_FragmentShader != 0U, false);
+
+	// link shaders into a program and find uniform locations
+	bool reuseProgram = (s_Program != 0);
+	s_Program = s_Program == 0 ? glCreateProgram() : s_Program;
+	AssertLogRV(s_Program != 0U, false);
+	if (!reuseProgram) {
+		glAttachShader(s_Program, s_VertexShader);
+		glAttachShader(s_Program, s_FragmentShader);
+	}
+#if SUPPORT_OPENGL_CORE
+	if (ApiType == kUnityGfxRendererOpenGLCore) {
+		glBindFragDataLocation(s_Program, 0, "fragColor");
+	}
+#endif // if SUPPORT_OPENGL_CORE
+	glLinkProgram(s_Program);
+
+	// check errors
+	GLint status = 0;
+	glGetProgramiv(s_Program, GL_LINK_STATUS, &status);
+	AssertLogRV(status == GL_TRUE, false);
+
+	s_UniformTime = glGetUniformLocation(s_Program, "t"); // NOTE that this can validly be 0 if the given source doesn't reference t
+
+	AssertLogRV(glGetError() == GL_NO_ERROR, false);
+	return true;
 }
 
-extern "C" void __declspec(dllexport) __stdcall UnityPluginUnload()
+CEXPORT(void) UnityPluginLoad(IUnityInterfaces* unityInterfaces)
+{
+	AssertLog(unityInterfaces != nullptr);
+	s_UnityInterfaces_p = unityInterfaces;
+	IUnityGraphics* graphics_p = s_UnityInterfaces_p->Get<IUnityGraphics>();
+	AssertLog(graphics_p != nullptr);
+	graphics_p->RegisterDeviceEventCallback(OnGraphicsDeviceEvent);
+	OnGraphicsDeviceEvent(kUnityGfxDeviceEventInitialize); // since this event can be missed depending on when the plugin is loaded
+}
+
+CEXPORT(void) UnityPluginUnload()
 {
 	UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
 }
 
-extern "C" UnityRenderingEvent __declspec(dllexport) __stdcall Execute()
+CEXPORT(void) SetTime(float t)
+{
+	s_TimeVal = t;
+}
+
+CEXPORT(UnityRenderingEvent) Execute()
 {
 	return OnRenderEvent;
 }
