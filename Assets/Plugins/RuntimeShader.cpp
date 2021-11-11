@@ -1,4 +1,4 @@
-//For x64 Visual Studio command line:  cl.exe /LD /D GLEW_STATIC PostProcessingMod.cpp GLEW/glew.c opengl32.lib
+//For x64 Visual Studio command line:  cl.exe /LD /D GLEW_STATIC RuntimeShader.cpp GLEW/glew.c opengl32.lib
 
 #include "Unity/PlatformBase.h"
 #include "Unity/IUnityGraphics.h"

@@ -104,7 +104,7 @@ public class MaterialTimeVarier : MonoBehaviour
 		shaderStrFrag += "}\n";
 
 		// compile shader
-		Camera.main.GetComponent<PostProcessingMod>().UpdateShader(shaderStrVert, shaderStrFrag);
+		Camera.main.GetComponent<RuntimeShader>().UpdateShader(shaderStrVert, shaderStrFrag);
 	}
 
 	public void UpdateLimits()

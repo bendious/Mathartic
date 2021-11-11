@@ -3,26 +3,26 @@ using System.Runtime.InteropServices;
 using UnityEngine;
 
 
-public class PostProcessingMod : MonoBehaviour
+public class RuntimeShader : MonoBehaviour
 {
 #if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
 	[DllImport ("__Internal")]
 #else
-	[DllImport("PostProcessingMod")]
+	[DllImport("RuntimeShader")]
 #endif
 	static extern IntPtr Execute();
 
 #if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
 	[DllImport ("__Internal")]
 #else
-	[DllImport("PostProcessingMod")]
+	[DllImport("RuntimeShader")]
 #endif
 	static extern void SetTime(float time);
 
 #if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
 	[DllImport ("__Internal")]
 #else
-	[DllImport("PostProcessingMod")]
+	[DllImport("RuntimeShader")]
 #endif
 	static extern bool UpdateGLShader([MarshalAs(UnmanagedType.LPStr)] string pSrcDataVert, [MarshalAs(UnmanagedType.LPStr)] string pSrcDataFrag);
 
