@@ -10,6 +10,13 @@ public class RuntimeShader : MonoBehaviour
 #else
 	[DllImport("RuntimeShader")]
 #endif
+	private static extern void RegisterPlugin();
+
+#if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
+	[DllImport("RuntimeShader")]
+#endif
 	static extern IntPtr Execute();
 
 #if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR
@@ -39,6 +46,11 @@ public class RuntimeShader : MonoBehaviour
 		catch (Exception) { _Success = false; }
 	}
 
+
+	void Start()
+	{
+		RegisterPlugin();
+	}
 
 	void OnRenderImage (RenderTexture source, RenderTexture destination)
 	{

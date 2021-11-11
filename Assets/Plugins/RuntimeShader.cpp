@@ -1,4 +1,5 @@
 //For x64 Visual Studio command line:  cl.exe /LD /D GLEW_STATIC RuntimeShader.cpp GLEW/glew.c opengl32.lib
+//	optionally, add /D DEBUG for debug output
 
 #include "Unity/PlatformBase.h"
 #include "Unity/IUnityGraphics.h"
@@ -16,14 +17,14 @@
 
 #if defined(DEBUG)
 #include <cstring>
-#include <stdio.h>
+#include <iostream>
 #endif
 
 
-#define CEXPORT(return_type) extern "C" return_type __declspec(dllexport) __stdcall
+#define CEXPORT(return_type) extern "C" return_type UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 
-typedef void (__stdcall* IUnityGraphicsDeviceEventCallback)(UnityGfxDeviceEventType eventType);
-typedef void (__stdcall* UnregisterDeviceEventCallback)(IUnityGraphicsDeviceEventCallback callback);
+typedef void (UNITY_INTERFACE_API* IUnityGraphicsDeviceEventCallback)(UnityGfxDeviceEventType eventType);
+typedef void (UNITY_INTERFACE_API* UnregisterDeviceEventCallback)(IUnityGraphicsDeviceEventCallback callback);
 
 
 static IUnityInterfaces* s_UnityInterfaces_p = nullptr;
@@ -37,11 +38,15 @@ static float s_TimeVal;
 
 
 #if defined(DEBUG)
+#if defined(UNITY_WEBGL)
+#define DEBUG_LOG(str) std::cout << str << std::endl
+#else
 #define DEBUG_LOG(str) {\
 	FILE* file = fopen("debug.log", "a"); \
 	fwrite(str, 1, strlen(str), file); \
 	fclose(file); \
 }
+#endif
 #else
 #define DEBUG_LOG(...)
 #endif
@@ -52,6 +57,7 @@ static float s_TimeVal;
 		DEBUG_LOG(#condition "\n");\
 		return rv;\
 	}\
+	DEBUG_LOG("passed: " #condition "\n");\
 }
 
 #define AssertLog(condition) AssertLogRV(condition, )
@@ -84,7 +90,7 @@ static GLuint CreateShader(GLenum type, const char* sourceText, GLuint prev)
 	return shaderH;
 }
 
-static void __stdcall OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
+static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
 {
 	if (eventType == kUnityGfxDeviceEventShutdown) {
 		if (s_VertexShader != 0U) {
@@ -99,7 +105,7 @@ static void __stdcall OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
 	}
 }
 
-static void __stdcall OnRenderEvent(int /*eventID*/) // NOTE the assumption that we're only being called here for rendering
+static void UNITY_INTERFACE_API OnRenderEvent(int /*eventID*/) // NOTE the assumption that we're only being called here for rendering
 {
 	if (s_Program == 0U) {
 		return; // avoid crashing if called prematurely or after being given invalid shader code
@@ -123,12 +129,12 @@ static void __stdcall OnRenderEvent(int /*eventID*/) // NOTE the assumption that
 
 CEXPORT(bool) UpdateGLShader(const char *const pSrcDataVert, const char *const pSrcDataFrag)
 {
-	AssertLogRV(s_UnityInterfaces_p != nullptr, false);
-	IUnityGraphics *const graphics_p = s_UnityInterfaces_p->Get<IUnityGraphics>();
-	AssertLogRV(graphics_p != nullptr, false);
-	static UnityGfxRenderer ApiType = graphics_p->GetRenderer();
+	// get API type if possible
+	// NOTE that we assume that no special initialization is necessary if s_UnityInterfaces_p hasn't been set, as a workaround for WebGL not calling UnityPluginLoad // TODO: fix?
+	IUnityGraphics *const graphics_p = (s_UnityInterfaces_p == nullptr) ? nullptr : s_UnityInterfaces_p->Get<IUnityGraphics>();
+	static UnityGfxRenderer ApiType = (graphics_p == nullptr) ? kUnityGfxRendererNull : graphics_p->GetRenderer();
 
-	AssertLogRV(ApiType == kUnityGfxRendererOpenGL || ApiType == kUnityGfxRendererOpenGLES20 || ApiType == kUnityGfxRendererOpenGLES30 || ApiType == kUnityGfxRendererOpenGLCore, false);
+	AssertLogRV(ApiType == kUnityGfxRendererOpenGL || ApiType == kUnityGfxRendererOpenGLES20 || ApiType == kUnityGfxRendererOpenGLES30 || ApiType == kUnityGfxRendererOpenGLCore || ApiType == kUnityGfxRendererNull/*TEMP?*/, false);
 	if (s_Program == 0) {
 		// init system
 #if SUPPORT_OPENGL_CORE
@@ -194,6 +200,11 @@ CEXPORT(void) UnityPluginLoad(IUnityInterfaces* unityInterfaces)
 CEXPORT(void) UnityPluginUnload()
 {
 	UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
+}
+
+CEXPORT(void) RegisterPlugin()
+{
+	//UnityRegisterRenderingPlugin(UnityPluginLoad, UnityPluginUnload); // TODO: use this to get web builds properly registered?
 }
 
 CEXPORT(void) SetTime(float t)

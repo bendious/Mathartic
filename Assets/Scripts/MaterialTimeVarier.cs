@@ -39,6 +39,21 @@ public class MaterialTimeVarier : MonoBehaviour
 	private Color32[] m_colorArray;
 
 
+#if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR // TODO: differentiate between GLES 2 and 3 web platforms?
+	private const string m_glslVersionDecl = "#version 300 es\n";
+	private const string m_vertOutputType = "out"; // for ES2: "varying"
+	private const string m_fragInputType = "in"; // for ES2: "varying"
+	private const string m_fragOutputName = "fragColor"; // for ES2: "gl_FragColor"
+	private const string m_fragOutputDecl = "out lowp vec4 " + m_fragOutputName + ";\n"; // for ES2: ""
+#else
+	private const string m_glslVersionDecl = "#version 150\n";
+	private const string m_vertOutputType = "out";
+	private const string m_fragInputType = "in";
+	private const string m_fragOutputName = "fragColor";
+	private const string m_fragOutputDecl = "out lowp vec4 " + m_fragOutputName + ";\n";
+#endif
+
+
 	private void Start()
 	{
 		UpdateLimits();
@@ -70,10 +85,11 @@ public class MaterialTimeVarier : MonoBehaviour
 
 		// write shaders
 		// TODO: account for different GLSL versions?
-		string shaderStrVert = "#version 150\n";
+		string shaderStrVert = m_glslVersionDecl;
+		shaderStrVert += "precision mediump float;\n";
 		shaderStrVert += "const vec3 vertices[6] = vec3[](vec3(1,-1,0), vec3(-1,-1,0), vec3(1,1,0), vec3(-1,-1,0), vec3(-1,1,0), vec3(1,1,0));\n";
 		shaderStrVert += "const vec2 uvs[6] = vec2[](vec2(1, 0), vec2(0, 0), vec2(1, 1), vec2(0, 0), vec2(0, 1), vec2(1, 1));\n";
-		shaderStrVert += "out vec2 texCoord;\n";
+		shaderStrVert += m_vertOutputType + " vec2 texCoord;\n";
 
 		shaderStrVert += "void main()\n";
 		shaderStrVert += "{\n";
@@ -81,26 +97,27 @@ public class MaterialTimeVarier : MonoBehaviour
 		shaderStrVert += "	gl_Position = vec4(vertices[gl_VertexID], 1);\n";
 		shaderStrVert += "}\n";
 
-		string shaderStrFrag = "#version 150\n";
+		string shaderStrFrag = m_glslVersionDecl;
+		shaderStrFrag += "precision mediump float;\n";
 		shaderStrFrag += "uniform float t;\n";
-		shaderStrFrag += "in vec2 texCoord;\n";
-		shaderStrFrag += "out lowp vec4 fragColor;\n";
+		shaderStrFrag += m_fragInputType + " vec2 texCoord;\n";
+		shaderStrFrag += m_fragOutputDecl;
 
 		shaderStrFrag += "void main()\n";
 		shaderStrFrag += "{\n";
-		shaderStrFrag += "	float x = mix(" + m_xMin + ", " + m_xMax + ", " + "texCoord.x);\n";
-		shaderStrFrag += "	float y = mix(" + m_yMin + ", " + m_yMax + ", " + "texCoord.y);\n";
-		shaderStrFrag += "	fragColor = vec4(";
+		shaderStrFrag += "	float x = mix(" + FormatFloat(m_xMin) + ", " + FormatFloat(m_xMax) + ", " + "texCoord.x);\n";
+		shaderStrFrag += "	float y = mix(" + FormatFloat(m_yMin) + ", " + FormatFloat(m_yMax) + ", " + "texCoord.y);\n";
+		shaderStrFrag += "	" + m_fragOutputName + " = vec4(";
 
 		// TODO: iterate through parsed expression trees rather than relying on lowercased function strings all having HLSL equivalents?
 		foreach (string expStr in parsedExpText)
 		{
 			shaderStrFrag += "(";
 			shaderStrFrag += string.IsNullOrEmpty(expStr) ? "0.0" : expStr.ToLower().Replace("[", "").Replace("]", "");
-			shaderStrFrag += " - " + m_outMin + ") / (" + m_outMax + " - " + m_outMin + ")"; // TODO: inverseLerp() function
-			shaderStrFrag += ",";
+			shaderStrFrag += " - " + FormatFloat(m_outMin) + ") / (" + FormatFloat(m_outMax) + " - " + FormatFloat(m_outMin) + ")"; // TODO: inverseLerp() function
+			shaderStrFrag += ", ";
 		}
-		shaderStrFrag += " 1.0);\n";
+		shaderStrFrag += "1.0);\n";
 		shaderStrFrag += "}\n";
 
 		// compile shader
@@ -198,5 +215,10 @@ public class MaterialTimeVarier : MonoBehaviour
 			}
 			return fallback;
 		}
+	}
+
+	private string FormatFloat(float f)
+	{
+		return f.ToString("0.00"); // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints
 	}
 }
