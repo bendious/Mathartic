@@ -23,6 +23,7 @@ public class MaterialTimeVarier : MonoBehaviour
 	public Text m_gErrorText;
 	public Text m_bErrorText;
 	public GameObject m_paramListParent;
+	public InputField m_randomizeDepthMaxField;
 
 
 	private float m_xMin;
@@ -99,8 +100,6 @@ public class MaterialTimeVarier : MonoBehaviour
 		m_binaryExpressionWeights.Count(f => f > 0.0f),
 		1.0f,
 	};
-
-	private const uint m_randomExpressionDepthMax = 5U;
 
 
 	private void Start()
@@ -211,12 +210,17 @@ public class MaterialTimeVarier : MonoBehaviour
 	public void Randomize()
 	{
 		// create random expression(s)
-		// NOTE the lack of try/catch since LogicalExpression.ToString() should never return an invalid expression string
 		// TODO: create/utilize params?
-		Expression[] expsRand = {
-			ExpressionFromString(RandomExpression().ToString()),
-			ExpressionFromString(RandomExpression().ToString()),
-			ExpressionFromString(RandomExpression().ToString()),
+		uint recursionMax = 0;
+		try
+		{
+			recursionMax = uint.Parse(m_randomizeDepthMaxField.text);
+		}
+		catch (Exception) { }
+		Expression[] expsRand = { // NOTE the lack of try/catch since LogicalExpression.ToString() should never return an invalid expression string
+			ExpressionFromString(RandomExpression(recursionMax).ToString()),
+			ExpressionFromString(RandomExpression(recursionMax).ToString()),
+			ExpressionFromString(RandomExpression(recursionMax).ToString()),
 		};
 
 		// fill in text fields
@@ -291,11 +295,11 @@ public class MaterialTimeVarier : MonoBehaviour
 		return f.ToString("0.00"); // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints
 	}
 
-	private static LogicalExpression RandomExpression(uint depth = 0U)
+	private static LogicalExpression RandomExpression(uint recursionMax)
 	{
 		Assert.AreEqual((int)ExpressionType.NumTypes, m_expressionTypeWeights.Length);
-		ExpressionType type = depth >= m_randomExpressionDepthMax ? ExpressionType.ValueExpression : Utility.RandomWeighted(Enumerable.Range(0, (int)ExpressionType.NumTypes).Select(i => (ExpressionType)i).ToArray(), m_expressionTypeWeights);
-		uint depthNext = depth + 1;
+		ExpressionType type = recursionMax <= 0 ? ExpressionType.ValueExpression : Utility.RandomWeightedEnum<ExpressionType>(m_expressionTypeWeights);
+		uint recursionNext = recursionMax - 1;
 		switch (type)
 		{
 			case ExpressionType.ValueExpression:
@@ -304,21 +308,21 @@ public class MaterialTimeVarier : MonoBehaviour
 				return Utility.RandomWeighted(values, Enumerable.Repeat(1.0f, values.Length).ToArray()); // TODO: differential weighting?
 			}
 			case ExpressionType.Function:
-				return new Function(new Identifier(Utility.RandomWeighted(m_randomExpressionFunctionNames, Enumerable.Repeat(1.0f, m_randomExpressionFunctionNames.Length).ToArray())), new LogicalExpression[] { RandomExpression(depthNext) }); // TODO: differential weighting? handle variable param count?
+				return new Function(new Identifier(m_randomExpressionFunctionNames[UnityEngine.Random.Range(0, m_randomExpressionFunctionNames.Length)]), new LogicalExpression[] { RandomExpression(recursionNext) }); // TODO: differential weighting? handle variable param count?
 			case ExpressionType.UnaryExpression:
 			{
 				UnaryExpressionType innerType = Utility.RandomWeightedEnum<UnaryExpressionType>(m_unaryExpressionWeights);
-				return new UnaryExpression(innerType, RandomExpression(depthNext));
+				return new UnaryExpression(innerType, RandomExpression(recursionNext));
 			}
 			case ExpressionType.BinaryExpression:
 			{
 				BinaryExpressionType innerType = Utility.RandomWeightedEnum<BinaryExpressionType>(m_binaryExpressionWeights);
-				return new BinaryExpression(innerType, RandomExpression(depthNext), RandomExpression(depthNext));
+				return new BinaryExpression(innerType, RandomExpression(recursionNext), RandomExpression(recursionNext));
 			}
 			case ExpressionType.TernaryExpression:
 			{
 				BinaryExpressionType innerType = (BinaryExpressionType)UnityEngine.Random.Range((int)BinaryExpressionType.NotEqual, (int)BinaryExpressionType.Equal); // TODO: don't assume current BinaryExpressionType ordering?
-				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(depthNext), RandomExpression(depthNext)), RandomExpression(depthNext), RandomExpression(depthNext));
+				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(recursionNext), RandomExpression(recursionNext)), RandomExpression(recursionNext), RandomExpression(recursionNext));
 			}
 			default:
 				Assert.IsTrue(false, "Unhandled ExpressionType");
