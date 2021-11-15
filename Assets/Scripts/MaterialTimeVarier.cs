@@ -1,4 +1,5 @@
 using NCalc;
+using NCalc.Domain;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,7 +10,6 @@ using UnityEngine.UI;
 
 public class MaterialTimeVarier : MonoBehaviour
 {
-	public float m_speedScalar = 1.0f;
 	public InputField m_xMinField;
 	public InputField m_xMaxField;
 	public InputField m_yMinField;
@@ -54,9 +54,59 @@ public class MaterialTimeVarier : MonoBehaviour
 #endif
 
 
+	private static readonly string[] m_randomExpressionFunctionNames = { "Sin", "Cos", "Tan", "Exp", "Abs", /*"Pow",*/ }; // TODO: handle multi-argument functions? get list of all NCalc supported functions?
+	// TODO: support more of these?
+	private static readonly float[] m_unaryExpressionWeights = {
+		0.0f, // Not
+		1.0f, // Negate
+		0.0f, // BitwiseNot
+	};
+	private static readonly float[] m_binaryExpressionWeights = {
+		0.0f, // And
+		0.0f, // Or
+		0.0f, // NotEqual
+		0.0f, // LesserOrEqual
+		0.0f, // GreaterOrEqual
+		0.0f, // Lesser
+		0.0f, // Greater
+		0.0f, // Equal
+		1.0f, // Minus
+		1.0f, // Plus
+		0.0f, // Modulo
+		1.0f, // Div
+		1.0f, // Times
+		0.0f, // BitwiseOr
+		0.0f, // BitwiseAnd
+		0.0f, // BitwiseXOr
+		0.0f, // LeftShift
+		0.0f, // RightShift
+		0.0f, // Unknown
+	};
+
+	private enum ExpressionType
+	{
+		ValueExpression,
+		Function,
+		UnaryExpression,
+		BinaryExpression,
+		TernaryExpression,
+		NumTypes
+	};
+	private static readonly float[] m_expressionTypeWeights = {
+		m_binaryExpressionWeights.Count(f => (f > 0.0f)), // TODO: improve weighting for values?
+		m_randomExpressionFunctionNames.Length,
+		m_unaryExpressionWeights.Count(f => f > 0.0f),
+		m_binaryExpressionWeights.Count(f => f > 0.0f),
+		1.0f,
+	};
+
+	private const uint m_randomExpressionDepthMax = 5U;
+
+
 	private void Start()
 	{
 		UpdateLimits();
+		Randomize();
 	}
 
 
@@ -64,7 +114,7 @@ public class MaterialTimeVarier : MonoBehaviour
 	{
 		// get expressions
 		// TODO: move out of per-frame logic?
-		m_paramExpressions = ZipSafe(m_paramFields, m_paramExpressions, (fields, exp) => string.IsNullOrEmpty(fields.Item1.text) ? null : ExpressionFromField(fields.Item2, fields.Item3, exp), false, true).ToArray();
+		m_paramExpressions = ZipSafe(m_paramFields, m_paramExpressions, (fields, exp) => ExpressionFromField(fields.Item2, fields.Item3, exp), false, true).ToArray();
 		ValueTuple<InputField, Text>[] fieldPairs = { (m_rField, m_rErrorText), (m_gField, m_gErrorText), (m_bField, m_bErrorText) };
 		m_expressions = m_expressions == null ? fieldPairs.Select(pair => ExpressionFromField(pair.Item1, pair.Item2, null)).ToArray() : fieldPairs.Zip(m_expressions, (pair, expPrev) => ExpressionFromField(pair.Item1, pair.Item2, expPrev)).ToArray();
 
@@ -76,7 +126,7 @@ public class MaterialTimeVarier : MonoBehaviour
 			m_colorArray = new Color32[pixelCount];
 		}
 
-		// check for ways to skip/combine evaluations
+		// parse expressions into strings
 		string[] parsedExpText = m_expressions.Select(exp => exp == null ? "" : exp.ParsedExpression.ToString()).ToArray();
 		foreach (ValueTuple<string, string> tuple in m_paramFields.Zip(m_paramExpressions, (fields, exp) => (fields.Item1.text, exp == null ? "" : exp.ParsedExpression.ToString())))
 		{
@@ -112,9 +162,9 @@ public class MaterialTimeVarier : MonoBehaviour
 		// TODO: iterate through parsed expression trees rather than relying on lowercased function strings all having HLSL equivalents?
 		foreach (string expStr in parsedExpText)
 		{
-			shaderStrFrag += "(";
+			shaderStrFrag += "((";
 			shaderStrFrag += string.IsNullOrEmpty(expStr) ? "0.0" : expStr.ToLower().Replace("[", "").Replace("]", "");
-			shaderStrFrag += " - " + FormatFloat(m_outMin) + ") / (" + FormatFloat(m_outMax) + " - " + FormatFloat(m_outMin) + ")"; // TODO: inverseLerp() function
+			shaderStrFrag += ") - " + FormatFloat(m_outMin) + ") / (" + FormatFloat(m_outMax) + " - " + FormatFloat(m_outMin) + ")"; // TODO: inverseLerp() function
 			shaderStrFrag += ", ";
 		}
 		shaderStrFrag += "1.0);\n";
@@ -158,6 +208,28 @@ public class MaterialTimeVarier : MonoBehaviour
 		UpdateShader(); // TODO: only if necessary?
 	}
 
+	public void Randomize()
+	{
+		// create random expression(s)
+		// NOTE the lack of try/catch since LogicalExpression.ToString() should never return an invalid expression string
+		// TODO: create/utilize params?
+		Expression[] expsRand = {
+			ExpressionFromString(RandomExpression().ToString()),
+			ExpressionFromString(RandomExpression().ToString()),
+			ExpressionFromString(RandomExpression().ToString()),
+		};
+
+		// fill in text fields
+		// TODO: detect & eliminate redundant parentheses?
+		string[] expStr = expsRand.Select(exp => exp.ParsedExpression.ToString().Replace("[", "").Replace("]", "")).ToArray();
+		m_rField.text = expStr[0];
+		m_gField.text = expStr[1];
+		m_bField.text = expStr[2];
+
+		// update
+		UpdateShader();
+	}
+
 
 	private IEnumerable<TOut> ZipSafe<T1, T2, TOut>(IEnumerable<T1> a, IEnumerable<T2> b, Func<T1, T2, TOut> f, bool extendA, bool extendB)
 	{
@@ -177,48 +249,93 @@ public class MaterialTimeVarier : MonoBehaviour
 		string text = field.text;
 		if (string.IsNullOrEmpty(text))
 		{
-			if (errorText != null)
-			{
-				errorText.text = "";
-			}
+			UpdateErrorText(errorText, "", field);
 			return null;
 		}
 
-		float tCur = Time.time * m_speedScalar;
 		try
 		{
-			Expression expNew = new Expression(text);
-			expNew.Parameters.Add("t", tCur);
-			expNew.Parameters.Add("x", 0.0f);
-			expNew.Parameters.Add("y", 0.0f);
-			foreach (string paramName in m_paramFields.Select(tuple => tuple.Item1.text).Where(t => !string.IsNullOrEmpty(t)))
-			{
-				expNew.Parameters.Add(paramName, 0.0f);
-			}
-			expNew.Evaluate();
-
-			if (errorText != null)
-			{
-				errorText.text = "";
-			}
+			Expression expNew = ExpressionFromString(text);
+			UpdateErrorText(errorText, "", field);
 			return expNew;
 		}
 		catch (Exception e)
 		{
-			if (errorText != null)
-			{
-				errorText.text = e.Message;
-			}
-			if (fallback != null)
-			{
-				fallback.Parameters["t"] = tCur;
-			}
+			UpdateErrorText(errorText, e.Message, field);
 			return fallback;
 		}
+	}
+
+	// NOTE the lack of try/catch here since the caller is expected to either guarantee a valid expression string or handle any thrown errors
+	private Expression ExpressionFromString(string text)
+	{
+		if (string.IsNullOrEmpty(text))
+		{
+			return null;
+		}
+
+		Expression expNew = new Expression(text, EvaluateOptions.IgnoreCase | EvaluateOptions.IterateParameters);
+		expNew.Parameters.Add("t", 0.0f);
+		expNew.Parameters.Add("x", 0.0f);
+		expNew.Parameters.Add("y", 0.0f);
+		foreach (string paramName in m_paramFields.Select(tuple => tuple.Item1.text).Where(t => !string.IsNullOrEmpty(t)))
+		{
+			expNew.Parameters.Add(paramName, 0.0f);
+		}
+		expNew.Evaluate();
+		return expNew;
 	}
 
 	private string FormatFloat(float f)
 	{
 		return f.ToString("0.00"); // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints
+	}
+
+	private static LogicalExpression RandomExpression(uint depth = 0U)
+	{
+		Assert.AreEqual((int)ExpressionType.NumTypes, m_expressionTypeWeights.Length);
+		ExpressionType type = depth >= m_randomExpressionDepthMax ? ExpressionType.ValueExpression : Utility.RandomWeighted(Enumerable.Range(0, (int)ExpressionType.NumTypes).Select(i => (ExpressionType)i).ToArray(), m_expressionTypeWeights);
+		uint depthNext = depth + 1;
+		switch (type)
+		{
+			case ExpressionType.ValueExpression:
+			{
+				LogicalExpression[] values = { new ValueExpression(UnityEngine.Random.value), new Identifier("x"), new Identifier("y"), new Identifier("t") }; // TODO: create/utilize parameters?
+				return Utility.RandomWeighted(values, Enumerable.Repeat(1.0f, values.Length).ToArray()); // TODO: differential weighting?
+			}
+			case ExpressionType.Function:
+				return new Function(new Identifier(Utility.RandomWeighted(m_randomExpressionFunctionNames, Enumerable.Repeat(1.0f, m_randomExpressionFunctionNames.Length).ToArray())), new LogicalExpression[] { RandomExpression(depthNext) }); // TODO: differential weighting? handle variable param count?
+			case ExpressionType.UnaryExpression:
+			{
+				UnaryExpressionType innerType = Utility.RandomWeightedEnum<UnaryExpressionType>(m_unaryExpressionWeights);
+				return new UnaryExpression(innerType, RandomExpression(depthNext));
+			}
+			case ExpressionType.BinaryExpression:
+			{
+				BinaryExpressionType innerType = Utility.RandomWeightedEnum<BinaryExpressionType>(m_binaryExpressionWeights);
+				return new BinaryExpression(innerType, RandomExpression(depthNext), RandomExpression(depthNext));
+			}
+			case ExpressionType.TernaryExpression:
+			{
+				BinaryExpressionType innerType = (BinaryExpressionType)UnityEngine.Random.Range((int)BinaryExpressionType.NotEqual, (int)BinaryExpressionType.Equal); // TODO: don't assume current BinaryExpressionType ordering?
+				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(depthNext), RandomExpression(depthNext)), RandomExpression(depthNext), RandomExpression(depthNext));
+			}
+			default:
+				Assert.IsTrue(false, "Unhandled ExpressionType");
+				return new ValueExpression(0.0f);
+		}
+	}
+
+	private void UpdateErrorText(Text errorText, string str, InputField field)
+	{
+		// update text
+		Assert.IsNotNull(errorText);
+		errorText.text = str;
+
+		// resize field to meet errorText w/o overlap
+		// TODO: don't assume field is left-aligned and errorText is right-aligned and content-sized?
+		Assert.IsNotNull(field);
+		RectTransform tf = field.GetComponent<RectTransform>();
+		tf.sizeDelta = new Vector2(-(errorText.preferredWidth - errorText.GetComponent<RectTransform>().anchoredPosition.x + tf.anchoredPosition.x), tf.sizeDelta.y);
 	}
 }

@@ -34,16 +34,19 @@ public class RuntimeShader : MonoBehaviour
 	static extern bool UpdateGLShader([MarshalAs(UnmanagedType.LPStr)] string pSrcDataVert, [MarshalAs(UnmanagedType.LPStr)] string pSrcDataFrag);
 
 
-	bool _Success = false;
+	private bool m_shaderReady = false;
+
+	private float m_startTime = 0.0f;
 
 
 	public void UpdateShader(string srcDataVert, string srcDataFrag)
 	{
 		try
 		{
-			_Success = UpdateGLShader(srcDataVert, srcDataFrag);
+			m_shaderReady = UpdateGLShader(srcDataVert, srcDataFrag);
+			m_startTime = Time.time;
 		}
-		catch (Exception) { _Success = false; }
+		catch (Exception) { m_shaderReady = false; }
 	}
 
 
@@ -55,9 +58,9 @@ public class RuntimeShader : MonoBehaviour
 	void OnRenderImage (RenderTexture source, RenderTexture destination)
 	{
 		Graphics.Blit(source, destination);
-		if (_Success)
+		if (m_shaderReady)
 		{
-			SetTime(Time.time);
+			SetTime(Time.time - m_startTime);
 			GL.IssuePluginEvent(Execute(), 1);
 		}
 	}
