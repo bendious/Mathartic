@@ -154,19 +154,23 @@ public class ExpressionShader
 		shaderStrFrag += m_fragInputType + " vec2 texCoord;\n";
 		shaderStrFrag += m_fragOutputDecl;
 
+		shaderStrFrag += "float inverseLerp(float a, float b, float value)\n";
+		shaderStrFrag += "{\n";
+		shaderStrFrag += "	return (value - a) / (b - a);\n";
+		shaderStrFrag += "}\n";
+
 		shaderStrFrag += "void main()\n";
 		shaderStrFrag += "{\n";
 		shaderStrFrag += "	float x = mix(" + FormatFloat(m_xMin) + ", " + FormatFloat(m_xMax) + ", " + "texCoord.x);\n";
 		shaderStrFrag += "	float y = mix(" + FormatFloat(m_yMin) + ", " + FormatFloat(m_yMax) + ", " + "texCoord.y);\n";
 		shaderStrFrag += "	" + m_fragOutputName + " = vec4(";
 
-		// TODO: iterate through parsed expression trees rather than relying on lowercased function strings all having GLSL equivalents
+		// TODO: iterate through parsed expression trees rather than strings
 		foreach (string expStr in parsedExpText)
 		{
-			shaderStrFrag += "((";
+			shaderStrFrag += "inverseLerp(" + FormatFloat(m_outMin) + ", " + FormatFloat(m_outMax) + ", ";
 			shaderStrFrag += string.IsNullOrEmpty(expStr) ? "0.0" : FormatExpressionString(expStr);
-			shaderStrFrag += ") - " + FormatFloat(m_outMin) + ") / (" + FormatFloat(m_outMax) + " - " + FormatFloat(m_outMin) + ")"; // TODO: inverseLerp() function
-			shaderStrFrag += ", ";
+			shaderStrFrag += "), ";
 		}
 		shaderStrFrag += "1.0);\n";
 		shaderStrFrag += "}\n";
