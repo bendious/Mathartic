@@ -377,7 +377,7 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateParamFields
         m_Mode: 1
         m_Arguments:
@@ -1221,7 +1221,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateLimits
         m_Mode: 1
         m_Arguments:
@@ -1542,7 +1542,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 519420028}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 93d52eb16b6d762478526f8051159844, type: 3}
+  m_Script: {fileID: 11500000, guid: 47c1c8f003b2c1d4b98b3abba5e6d231, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   m_xMinField: {fileID: 374286234}
@@ -1657,7 +1657,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateLimits
         m_Mode: 1
         m_Arguments:
@@ -1985,7 +1985,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateLimits
         m_Mode: 1
         m_Arguments:
@@ -2217,7 +2217,7 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateParamFields
         m_Mode: 1
         m_Arguments:
@@ -2300,7 +2300,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0.00008637476}
+  m_AnchoredPosition: {x: 0, y: 0.00041820869}
   m_SizeDelta: {x: 0, y: 30}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &672721209
@@ -2528,7 +2528,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateShader
         m_Mode: 1
         m_Arguments:
@@ -2688,7 +2688,7 @@ RectTransform:
   m_AnchorMin: {x: 1, y: 0}
   m_AnchorMax: {x: 1, y: 0}
   m_AnchoredPosition: {x: -150, y: 15}
-  m_SizeDelta: {x: 75, y: 20}
+  m_SizeDelta: {x: 80, y: 20}
   m_Pivot: {x: 1, y: 0}
 --- !u!114 &761863662
 MonoBehaviour:
@@ -2735,7 +2735,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: Randomize
         m_Mode: 1
         m_Arguments:
@@ -2822,7 +2822,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 50, y: 0}
-  m_SizeDelta: {x: -55, y: 30}
+  m_SizeDelta: {x: -50, y: 30}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &783643317
 MonoBehaviour:
@@ -2882,7 +2882,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateShader
         m_Mode: 1
         m_Arguments:
@@ -3101,7 +3101,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 296454875}
   m_Direction: 2
   m_Value: 0
-  m_Size: 0.9999036
+  m_Size: 1
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -3543,7 +3543,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateLimits
         m_Mode: 1
         m_Arguments:
@@ -3698,7 +3698,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateShader
         m_Mode: 1
         m_Arguments:
@@ -4974,7 +4974,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateLimits
         m_Mode: 1
         m_Arguments:
@@ -5366,7 +5366,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateShader
         m_Mode: 1
         m_Arguments:
@@ -5866,7 +5866,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: -5, y: -15}
+  m_AnchoredPosition: {x: 0, y: -15}
   m_SizeDelta: {x: 0, y: 16}
   m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &1758106679
@@ -6171,7 +6171,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateShader
         m_Mode: 1
         m_Arguments:
@@ -6326,7 +6326,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 519420033}
-        m_TargetAssemblyTypeName: MaterialTimeVarier, Assembly-CSharp
+        m_TargetAssemblyTypeName: ExpressionShaderUI, Assembly-CSharp
         m_MethodName: UpdateLimits
         m_Mode: 1
         m_Arguments:

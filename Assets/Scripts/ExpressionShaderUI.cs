@@ -1,0 +1,124 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.Assertions;
+using UnityEngine.UI;
+
+
+public class ExpressionShaderUI : MonoBehaviour
+{
+	public InputField m_xMinField;
+	public InputField m_xMaxField;
+	public InputField m_yMinField;
+	public InputField m_yMaxField;
+	public InputField m_outMinField;
+	public InputField m_outMaxField;
+	public InputField m_rField;
+	public InputField m_gField;
+	public InputField m_bField;
+	public Text m_rErrorText;
+	public Text m_gErrorText;
+	public Text m_bErrorText;
+	public GameObject m_paramListParent;
+	public InputField m_randomizeDepthMaxField;
+
+
+	private ValueTuple<InputField, InputField, Text>[] m_paramFields = { };
+
+	private readonly ExpressionShader m_internals = new ExpressionShader();
+
+
+	private void Start()
+	{
+		UpdateLimits();
+		Randomize();
+	}
+
+
+	public void UpdateShader()
+	{
+		// get expression strings
+		ValueTuple<InputField, Text>[] fieldPairs = { (m_rField, m_rErrorText), (m_gField, m_gErrorText), (m_bField, m_bErrorText) };
+		string[] expressionsRaw = fieldPairs.Select(pair => pair.Item1.text).ToArray();
+		ValueTuple<string, string>[] paramNamesExpressionsRaw = m_paramFields.Select(fields => (fields.Item1.text, fields.Item2.text)).ToArray();
+
+		// pass in for evaluation
+		Exception[] errors = m_internals.UpdateShader(expressionsRaw, paramNamesExpressionsRaw);
+		Assert.AreEqual(errors.Length, expressionsRaw.Length + paramNamesExpressionsRaw.Length);
+
+		// update error messages
+		foreach (ValueTuple<ValueTuple<InputField, Text>, Exception> tuple in fieldPairs.Concat(m_paramFields.Select(fields => (fields.Item2, fields.Item3))).Zip(errors, (pair, err) => (pair, err)))
+		{
+			UpdateErrorText(tuple.Item1.Item2, tuple.Item2 == null ? "" : tuple.Item2.Message, tuple.Item1.Item1);
+		}
+	}
+
+	public void UpdateLimits()
+	{
+		float.TryParse(m_xMinField.text, out m_internals.m_xMin);
+		float.TryParse(m_xMaxField.text, out m_internals.m_xMax);
+		float.TryParse(m_yMinField.text, out m_internals.m_yMin);
+		float.TryParse(m_yMaxField.text, out m_internals.m_yMax);
+		float.TryParse(m_outMinField.text, out m_internals.m_outMin);
+		float.TryParse(m_outMaxField.text, out m_internals.m_outMax);
+
+		UpdateShader(); // TODO: only if necessary?
+	}
+
+	public void UpdateParamFields()
+	{
+		List<ValueTuple<InputField, InputField, Text>> paramFieldsList = new List<ValueTuple<InputField, InputField, Text>>();
+		for (int i = 0, n = m_paramListParent.transform.childCount; i < n; ++i)
+		{
+			GameObject child = m_paramListParent.transform.GetChild(i).gameObject;
+			if (!child.activeSelf)
+			{
+				continue; // ignore placeholder object
+			}
+
+			// TODO: don't assume objects will always be set up w/ children ordered as ({NameField}, {StaticText}, {ExpressionField}, {ErrorText})?
+			InputField[] inputFields = child.GetComponentsInChildren<InputField>();
+			Assert.IsTrue(inputFields.Length == 2);
+			paramFieldsList.Add((inputFields.First(), inputFields.Last(), child.GetComponentsInChildren<Text>().Last()));
+		}
+		m_paramFields = paramFieldsList.ToArray();
+
+		UpdateShader(); // TODO: only if necessary?
+	}
+
+	public void Randomize()
+	{
+		// get max depth
+		uint recursionMax = 0;
+		try
+		{
+			recursionMax = uint.Parse(m_randomizeDepthMaxField.text);
+		}
+		catch (Exception) { }
+
+		// randomize & update shader
+		string[] expStrings = m_internals.Randomize(recursionMax);
+
+		// fill in text fields
+		// TODO: detect & eliminate redundant parentheses?
+		Assert.AreEqual(expStrings.Length, 3);
+		m_rField.text = expStrings[0];
+		m_gField.text = expStrings[1];
+		m_bField.text = expStrings[2];
+	}
+
+
+	private void UpdateErrorText(Text errorText, string str, InputField field)
+	{
+		// update text
+		Assert.IsNotNull(errorText);
+		errorText.text = str;
+
+		// resize field to meet errorText w/o overlap
+		// TODO: don't assume field is left-aligned and errorText is right-aligned and content-sized?
+		Assert.IsNotNull(field);
+		RectTransform tf = field.GetComponent<RectTransform>();
+		tf.sizeDelta = new Vector2(-(errorText.preferredWidth - errorText.GetComponent<RectTransform>().anchoredPosition.x + tf.anchoredPosition.x), tf.sizeDelta.y);
+	}
+}
