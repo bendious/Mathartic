@@ -36,7 +36,10 @@ public class ExpressionShader
 #endif
 
 
-	private static readonly string[] m_randomExpressionFunctionNames = { "Sin", "Cos", "Tan", "Exp", "Abs", /*"Pow",*/ }; // TODO: handle multi-argument functions? get list of all NCalc supported functions?
+	// see https://riptutorial.com/ncalc/learn/100004/functions and/or https://github.com/ncalc/ncalc/blob/master/Evaluant.Calculator/Domain/EvaluationVisitor.cs for NCalc function list
+	// TODO: handling for functions w/ different names between NCalc/GLSL
+	private static readonly ValueTuple<string, int>[] m_randomExpressionFunctionNames = { ("Abs", 1), ("Acos", 1), ("Asin", 1), ("Atan", 1), /*("Ceiling", 1),*/ ("Cos", 1), ("Exp", 1), ("Floor", 1), /*("IEEERemainder", 2),*/ /*("Ln", 1),*/ /*("Log", 2),*/ /*("Log10", 1),*/ ("Pow", 2), /*("Round", 2),*/ ("Sign", 1), ("Sin", 1), ("Sqrt", 1), ("Tan", 1), /*("Truncate", 1),*/ ("Max", 2), ("Min", 2), /*("if", 3),*/ /*("in", >1),*/ };
+
 	// TODO: support more of these?
 	private static readonly float[] m_unaryExpressionWeights = {
 		0.0f, // Not
@@ -242,7 +245,11 @@ public class ExpressionShader
 				return values[UnityEngine.Random.Range(0, values.Length)]; // TODO: differential weighting?
 			}
 			case ExpressionType.Function:
-				return new Function(new Identifier(m_randomExpressionFunctionNames[UnityEngine.Random.Range(0, m_randomExpressionFunctionNames.Length)]), new LogicalExpression[] { RandomExpression(recursionNext) }); // TODO: differential weighting? handle variable param count?
+			{
+				ValueTuple<string, int> functionAndParamCount = m_randomExpressionFunctionNames[UnityEngine.Random.Range(0, m_randomExpressionFunctionNames.Length)]; // TODO: differential weighting?
+				LogicalExpression[] args = Enumerable.Repeat(0, functionAndParamCount.Item2).Select(i => RandomExpression(recursionNext)).ToArray();
+				return new Function(new Identifier(functionAndParamCount.Item1), args);
+			}
 			case ExpressionType.UnaryExpression:
 			{
 				UnaryExpressionType innerType = Utility.RandomWeightedEnum<UnaryExpressionType>(m_unaryExpressionWeights);
