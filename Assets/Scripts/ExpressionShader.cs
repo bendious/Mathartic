@@ -75,7 +75,7 @@ public class ExpressionShader
 		("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
 		("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
 		("Pow", 2, null),
-		("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10, " + FormatArg(args[1]) + ")) / pow(10, " + FormatArg(args[1]) + ")) "),
+		("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10.0, " + FormatArg(args[1]) + ")) / pow(10.0, " + FormatArg(args[1]) + ")) "),
 		("Sign", 1, null),
 		("Sin", 1, null),
 		("Sqrt", 1, null),
@@ -255,7 +255,7 @@ public class ExpressionShader
 
 	private static string FormatFloat(float f)
 	{
-		return f.ToString("0.00"); // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints
+		return "float(" + f + ")"; // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints
 	}
 
 	private static string FormatArg(string arg)

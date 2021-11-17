@@ -1,22 +1,10 @@
 using NCalc.Domain;
 using System;
 using System.Linq;
-using System.Text;
-using System.Globalization;
 
 
 public class GLSLVisitor : SerializationVisitor
 {
-	// only necessary due to SerializationVisitor._numberFormatInfo being private...
-	private readonly NumberFormatInfo _numberFormatInfo;
-
-
-	public GLSLVisitor()
-		: base()
-	{
-		_numberFormatInfo = new NumberFormatInfo { NumberDecimalDigits = 2, NumberDecimalSeparator = "." };
-	}
-
 	public override void Visit(TernaryExpression expression)
 	{
 		Result.Append("bool(");
@@ -97,13 +85,13 @@ public class GLSLVisitor : SerializationVisitor
 		}
 	}
 
-	// only necessary due to SerializationVisitor._numberFormatInfo being private...
 	public override void Visit(ValueExpression expression)
 	{
 		switch (expression.Type)
 		{
+			case NCalc.Domain.ValueType.Integer: // NOTE that we want to interpret "ints" as floats since all our mathematical functions take floats and GLSL doesn't implicitly cast
 			case NCalc.Domain.ValueType.Float:
-				Result.Append(decimal.Parse(expression.Value.ToString()).ToString(_numberFormatInfo)).Append(" ");
+				Result.Append("float(" + float.Parse(expression.Value.ToString()).ToString()).Append(") ");
 				break;
 
 			default:
