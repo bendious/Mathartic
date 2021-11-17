@@ -37,32 +37,33 @@ public class ExpressionShader
 
 
 	// see https://riptutorial.com/ncalc/learn/100004/functions and/or https://github.com/ncalc/ncalc/blob/master/Evaluant.Calculator/Domain/EvaluationVisitor.cs for NCalc function list
-	// TODO: handling for functions w/ different names between NCalc/GLSL
-	private static readonly ValueTuple<string, int, Func<string[], string>>[] m_randomExpressionFunctions = {
+	// TODO: extract into separate class?
+	public static readonly ValueTuple<string, int, Func<string[], string>>[] m_randomExpressionFunctions = {
 		("Abs", 1, null),
 		("Acos", 1, null),
 		("Asin", 1, null),
 		("Atan", 1, null),
-		("Ceiling", 1, args => "ceil" + FormatArg(args.First())),
+		("Ceiling", 1, args => "ceil" + FormatArg(args.First()) + " "),
 		("Cos", 1, null),
 		("Exp", 1, null),
 		("Floor", 1, null),
-		("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + ")))"),
-		("Ln", 1, args => "log" + FormatArg(args.First())),
-		("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ")"),
-		("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0))"),
+		("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + "))) "),
+		("Ln", 1, args => "log" + FormatArg(args.First()) + " "),
+		("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
+		("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
 		("Pow", 2, null),
-		("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10, " + FormatArg(args[1]) + ")) / pow(10, " + FormatArg(args[1]) + "))"),
+		("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10, " + FormatArg(args[1]) + ")) / pow(10, " + FormatArg(args[1]) + ")) "),
 		("Sign", 1, null),
 		("Sin", 1, null),
 		("Sqrt", 1, null),
 		("Tan", 1, null),
-		("Truncate", 1, args => "float(int" + FormatArg(args.First()) + ")"),
+		("Truncate", 1, args => "float(int" + FormatArg(args.First()) + ") "),
 		("Max", 2, null),
 		("Min", 2, null),
-		("if", 3, args => "(" + FormatArg(args.First()) + " ? " + FormatArg(args[1]) + " : " + FormatArg(args[2]) + ")"),
+		("if", 3, args => "(bool" + FormatArg(args.First()) + " ? " + FormatArg(args[1]) + " : " + FormatArg(args[2]) + ") "),
 		/*("in", >1, null),*/
 	};
+
 
 	// TODO: support more of these?
 	private static readonly float[] m_unaryExpressionWeights = {
@@ -125,16 +126,6 @@ public class ExpressionShader
 			return errorList.ToArray();
 		}
 
-		// parse expressions into processed strings
-		string[] parsedExpText = ZipSafe(expressions, m_expressionsPrev, (exp, expPrev) => exp == null && expPrev == null ? "" : (exp == null ? expPrev : exp).ParsedExpression.ToString(), false, true).ToArray();
-		if (paramNamesExpressions != null || m_paramNamesExpressionsPrev != null)
-		{
-			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramNamesExpressions, m_paramNamesExpressionsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, false).Where(tuple => tuple.Item1 != null && tuple.Item2 != null))
-			{
-				parsedExpText = Array.ConvertAll(parsedExpText, str => str.Replace('[' + tuple.Item1 + ']', tuple.Item2.ParsedExpression.ToString()));
-			}
-		}
-
 		// write shaders
 		string shaderStrVert = m_glslVersionDecl;
 		shaderStrVert += "precision mediump float;\n";
@@ -163,13 +154,25 @@ public class ExpressionShader
 		shaderStrFrag += "{\n";
 		shaderStrFrag += "	float x = mix(" + FormatFloat(m_xMin) + ", " + FormatFloat(m_xMax) + ", " + "texCoord.x);\n";
 		shaderStrFrag += "	float y = mix(" + FormatFloat(m_yMin) + ", " + FormatFloat(m_yMax) + ", " + "texCoord.y);\n";
+
+		// parse params
+		if (paramNamesExpressions != null || m_paramNamesExpressionsPrev != null)
+		{
+			// TODO: order param definitions to deliberately support iteration? break into pieces to support recursion?
+			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramNamesExpressions, m_paramNamesExpressionsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, false).Where(tuple => tuple.Item1 != null && tuple.Item2 != null))
+			{
+				shaderStrFrag += "	float " + tuple.Item1 + " = " + FormatExpressionString(tuple.Item2) + ";\n";
+			}
+		}
+
 		shaderStrFrag += "	" + m_fragOutputName + " = vec4(";
 
-		// TODO: iterate through parsed expression trees rather than strings
-		foreach (string expStr in parsedExpText)
+		// parse RGB expressions
+		Expression[] expressionsFinal = ZipSafe(expressions, m_expressionsPrev, (exp, expPrev) => exp == null && expPrev == null ? null : (exp ?? expPrev), false, true).ToArray();
+		foreach (Expression exp in expressionsFinal)
 		{
 			shaderStrFrag += "inverseLerp(" + FormatFloat(m_outMin) + ", " + FormatFloat(m_outMax) + ", ";
-			shaderStrFrag += string.IsNullOrEmpty(expStr) ? "0.0" : FormatExpressionString(expStr);
+			shaderStrFrag += exp == null ? "0.0" : FormatExpressionString(exp);
 			shaderStrFrag += "), ";
 		}
 		shaderStrFrag += "1.0);\n";
@@ -264,57 +267,15 @@ public class ExpressionShader
 		return '(' + argStr + ')'; // extra parentheses to avoid precedence issues
 	}
 
-	private static string FormatExpressionString(string s)
+	private static string FormatExpressionString(Expression expression)
 	{
-		// TODO: efficiency?
-		s = s.ToLower().Replace("[", "").Replace("]", "");
-		foreach (ValueTuple<string, int, Func<string[], string>> tuple in m_randomExpressionFunctions.Where(tuple => tuple.Item3 != null))
-		{
-			Assert.IsNotNull(tuple.Item1);
-			Assert.IsNotNull(tuple.Item3);
-			int failsafeCount = 100;
-			int startIndex = 0;
-			string funcName = tuple.Item1.ToLower();
-			while (failsafeCount-- > 0)
-			{
-				// find next valid function reference
-				startIndex = s.IndexOf(funcName, startIndex); // NOTE that we ignore parts of the string that have already been processed since we don't want recursive replacement
-				if (startIndex < 0)
-				{
-					break; // no more instances found in string
-				}
-				int argsStartIndex = startIndex + funcName.Length + 1;
-				if (argsStartIndex >= s.Length || s[argsStartIndex - 1] != '(')
-				{
-					break; // function name not followed by argument list
-				}
+		Assert.IsNotNull(expression);
+		LogicalExpression expParsed = expression.ParsedExpression;
+		Assert.IsNotNull(expParsed);
 
-				// tokenize arguments
-				int innerIndex = s.IndexOf('(', argsStartIndex);
-				int endIndex = s.IndexOf(')', argsStartIndex);
-				while (innerIndex >= 0 && innerIndex < endIndex) // TODO: better accounting for nested functions
-				{
-					innerIndex = s.IndexOf('(', innerIndex + 1);
-					endIndex = s.IndexOf(')', endIndex + 1);
-				}
-				if (endIndex < 0)
-				{
-					break; // unterminated argument list
-				}
-				string argsStr = s.Substring(argsStartIndex, endIndex - argsStartIndex);
-				string[] args = System.Text.RegularExpressions.Regex.Split(argsStr, "\\(*,\\)*?"); // TODO: ensure the same number of opening/closing parentheses in matches
-				if (args.Length != tuple.Item2)
-				{
-					break; // unexpected number of arguments
-				}
-
-				// replace
-				string replacementStr = tuple.Item3(args);
-				s = s.Substring(0, startIndex) + replacementStr + s.Substring(endIndex + 1);
-				startIndex += replacementStr.Length; // to prevent recursive replacement of things like "Round(x,y)"-->"round(z)"
-			}
-		}
-		return s;
+		GLSLVisitor stringifier = new GLSLVisitor();
+		expParsed.Accept(stringifier);
+		return stringifier.Result.ToString().ToLower(); // TODO: move lowercasing into GLSLVisitor somewhere?
 	}
 
 	private static LogicalExpression RandomExpression(uint recursionMax)
