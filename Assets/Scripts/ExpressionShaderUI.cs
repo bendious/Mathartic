@@ -63,7 +63,7 @@ public class ExpressionShaderUI : MonoBehaviour
 		float.TryParse(m_outMinField.text, out m_internals.m_outMin);
 		float.TryParse(m_outMaxField.text, out m_internals.m_outMax);
 
-		UpdateShader(); // TODO: only if necessary?
+		UpdateShader(); // this will early-out if the shader is unchanged
 	}
 
 	public void UpdateParamFields()
@@ -84,7 +84,7 @@ public class ExpressionShaderUI : MonoBehaviour
 		}
 		m_paramFields = paramFieldsList.ToArray();
 
-		UpdateShader(); // TODO: only if necessary?
+		UpdateShader(); // this will early-out if the shader is unchanged
 	}
 
 	public void Randomize()
@@ -104,8 +104,11 @@ public class ExpressionShaderUI : MonoBehaviour
 		// TODO: detect & eliminate redundant parentheses?
 		Assert.AreEqual(expStrings.Length, 3);
 		m_rField.text = expStrings[0];
+		UpdateErrorText(m_rErrorText, "", m_rField); // TODO: don't assume random expressions will always be valid?
 		m_gField.text = expStrings[1];
+		UpdateErrorText(m_gErrorText, "", m_gField);
 		m_bField.text = expStrings[2];
+		UpdateErrorText(m_bErrorText, "", m_bField);
 	}
 
 

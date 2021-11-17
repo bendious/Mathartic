@@ -19,6 +19,7 @@ public class ExpressionShader
 
 	private Expression[] m_expressionsPrev;
 	private ValueTuple<string, Expression>[] m_paramNamesExpressionsPrev;
+	private string m_fragShaderPrev;
 
 
 #if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR // TODO: differentiate between GLES 2 and 3 web platforms?
@@ -35,6 +36,28 @@ public class ExpressionShader
 	private const string m_fragOutputDecl = "out lowp vec4 " + m_fragOutputName + ";\n";
 #endif
 
+	private const string m_shaderStrVert = m_glslVersionDecl
+		+ "precision mediump float;\n"
+		+ "const vec3 vertices[6] = vec3[](vec3(1, -1, 0), vec3(-1, -1, 0), vec3(1, 1, 0), vec3(-1, -1, 0), vec3(-1, 1, 0), vec3(1, 1, 0));\n"
+		+ "const vec2 uvs[6] = vec2[](vec2(1, 0), vec2(0, 0), vec2(1, 1), vec2(0, 0), vec2(0, 1), vec2(1, 1));\n"
+		+ m_vertOutputType + " vec2 texCoord;\n"
+		+ "void main()\n"
+		+ "{\n"
+		+ "	texCoord = uvs[gl_VertexID];\n"
+		+ "	gl_Position = vec4(vertices[gl_VertexID], 1);\n"
+		+ "}\n";
+	private const string m_shaderStrFragPrefix = m_glslVersionDecl
+		+ "precision mediump float;\n"
+		+ "uniform float t;\n"
+		+ m_fragInputType + " vec2 texCoord;\n"
+		+ m_fragOutputDecl
+		+ "float inverseLerp(float a, float b, float value)\n"
+		+ "{\n"
+		+ "	return (value - a) / (b - a);\n"
+		+ "}\n"
+		+ "void main()\n"
+		+ "{\n";
+
 
 	// see https://riptutorial.com/ncalc/learn/100004/functions and/or https://github.com/ncalc/ncalc/blob/master/Evaluant.Calculator/Domain/EvaluationVisitor.cs for NCalc function list
 	// TODO: extract into separate class?
@@ -48,7 +71,7 @@ public class ExpressionShader
 		("Exp", 1, null),
 		("Floor", 1, null),
 		("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + "))) "),
-		("Ln", 1, args => "log" + FormatArg(args.First()) + " "),
+		//("Ln", 1, args => "log" + FormatArg(args.First()) + " "), // TODO: update NCalc.dll to include the newest code to support this?
 		("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
 		("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
 		("Pow", 2, null),
@@ -126,32 +149,8 @@ public class ExpressionShader
 			return errorList.ToArray();
 		}
 
-		// write shaders
-		string shaderStrVert = m_glslVersionDecl;
-		shaderStrVert += "precision mediump float;\n";
-		shaderStrVert += "const vec3 vertices[6] = vec3[](vec3(1, -1, 0), vec3(-1, -1, 0), vec3(1, 1, 0), vec3(-1, -1, 0), vec3(-1, 1, 0), vec3(1, 1, 0));\n";
-		shaderStrVert += "const vec2 uvs[6] = vec2[](vec2(1, 0), vec2(0, 0), vec2(1, 1), vec2(0, 0), vec2(0, 1), vec2(1, 1));\n";
-		shaderStrVert += m_vertOutputType + " vec2 texCoord;\n";
-
-		shaderStrVert += "void main()\n";
-		shaderStrVert += "{\n";
-		shaderStrVert += "	texCoord = uvs[gl_VertexID];\n";
-		shaderStrVert += "	gl_Position = vec4(vertices[gl_VertexID], 1);\n";
-		shaderStrVert += "}\n";
-
-		string shaderStrFrag = m_glslVersionDecl;
-		shaderStrFrag += "precision mediump float;\n";
-		shaderStrFrag += "uniform float t;\n";
-		shaderStrFrag += m_fragInputType + " vec2 texCoord;\n";
-		shaderStrFrag += m_fragOutputDecl;
-
-		shaderStrFrag += "float inverseLerp(float a, float b, float value)\n";
-		shaderStrFrag += "{\n";
-		shaderStrFrag += "	return (value - a) / (b - a);\n";
-		shaderStrFrag += "}\n";
-
-		shaderStrFrag += "void main()\n";
-		shaderStrFrag += "{\n";
+		// write fragment shader
+		string shaderStrFrag = m_shaderStrFragPrefix;
 		shaderStrFrag += "	float x = mix(" + FormatFloat(m_xMin) + ", " + FormatFloat(m_xMax) + ", " + "texCoord.x);\n";
 		shaderStrFrag += "	float y = mix(" + FormatFloat(m_yMin) + ", " + FormatFloat(m_yMax) + ", " + "texCoord.y);\n";
 
@@ -159,7 +158,7 @@ public class ExpressionShader
 		if (paramNamesExpressions != null || m_paramNamesExpressionsPrev != null)
 		{
 			// TODO: order param definitions to deliberately support iteration? break into pieces to support recursion?
-			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramNamesExpressions, m_paramNamesExpressionsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, false).Where(tuple => tuple.Item1 != null && tuple.Item2 != null))
+			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramNamesExpressions, m_paramNamesExpressionsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, true).Where(tuple => !string.IsNullOrEmpty(tuple.Item1) && tuple.Item2 != null))
 			{
 				shaderStrFrag += "	float " + tuple.Item1 + " = " + FormatExpressionString(tuple.Item2) + ";\n";
 			}
@@ -178,11 +177,15 @@ public class ExpressionShader
 		shaderStrFrag += "1.0);\n";
 		shaderStrFrag += "}\n";
 
-		// compile shader
-		Camera.main.GetComponent<RuntimeShader>().UpdateShader(shaderStrVert, shaderStrFrag);
+		if (shaderStrFrag != m_fragShaderPrev)
+		{
+			// compile shader
+			Camera.main.GetComponent<RuntimeShader>().UpdateShader(m_shaderStrVert, shaderStrFrag);
 
-		m_expressionsPrev = expressions;
-		m_paramNamesExpressionsPrev = paramNamesExpressions;
+			m_expressionsPrev = expressions;
+			m_paramNamesExpressionsPrev = paramNamesExpressions;
+			m_fragShaderPrev = shaderStrFrag;
+		}
 
 		return errorList.ToArray();
 	}
@@ -214,13 +217,7 @@ public class ExpressionShader
 			try
 			{
 				string text = inputToExpStr(input);
-				if (string.IsNullOrEmpty(text))
-				{
-					errorList.Add(null);
-					return expToOutput(null, input);
-				}
-
-				Expression expNew = new Expression(text, EvaluateOptions.IgnoreCase | EvaluateOptions.IterateParameters);
+				Expression expNew = new Expression(string.IsNullOrEmpty(text) ? "0.0" : text, EvaluateOptions.IgnoreCase);
 				expNew.Parameters.Add("t", 0.0f);
 				expNew.Parameters.Add("x", 0.0f);
 				expNew.Parameters.Add("y", 0.0f);
