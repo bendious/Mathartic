@@ -14,6 +14,7 @@ public class ExpressionShaderUI : MonoBehaviour
 	public InputField m_yMaxField;
 	public InputField m_outMinField;
 	public InputField m_outMaxField;
+	public InputField m_equalityEpsilonField;
 	public InputField m_rField;
 	public InputField m_gField;
 	public InputField m_bField;
@@ -21,6 +22,7 @@ public class ExpressionShaderUI : MonoBehaviour
 	public Text m_gErrorText;
 	public Text m_bErrorText;
 	public GameObject m_paramListParent;
+	public Toggle m_randomizeDiscontinuousToggle;
 	public InputField m_randomizeDepthMaxField;
 
 
@@ -63,6 +65,8 @@ public class ExpressionShaderUI : MonoBehaviour
 		float.TryParse(m_outMinField.text, out m_internals.m_outMin);
 		float.TryParse(m_outMaxField.text, out m_internals.m_outMax);
 
+		float.TryParse(m_equalityEpsilonField.text, out m_internals.m_epsilon);
+
 		UpdateShader(); // this will early-out if the shader is unchanged
 	}
 
@@ -98,7 +102,7 @@ public class ExpressionShaderUI : MonoBehaviour
 		catch (Exception) { }
 
 		// randomize & update shader
-		string[] expStrings = m_internals.Randomize(recursionMax);
+		string[] expStrings = m_internals.Randomize(recursionMax, m_randomizeDiscontinuousToggle.isOn);
 
 		// fill in text fields
 		// TODO: detect & eliminate redundant parentheses?

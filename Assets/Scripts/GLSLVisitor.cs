@@ -5,6 +5,14 @@ using System.Linq;
 
 public class GLSLVisitor : SerializationVisitor
 {
+	private float m_epsilon;
+
+
+	public GLSLVisitor(float epsilon)
+	{
+		m_epsilon = epsilon;
+	}
+
 	public override void Visit(TernaryExpression expression)
 	{
 		Result.Append("bool(");
@@ -20,23 +28,27 @@ public class GLSLVisitor : SerializationVisitor
 		switch (expression.Type)
 		{
 			case BinaryExpressionType.And:
+				Result.Append("float(");
 				EncapsulateNoValue(expression.LeftExpression);
 				Result.Append("&& ");
 				EncapsulateNoValue(expression.RightExpression);
+				Result.Append(") ");
 				break;
 
 			case BinaryExpressionType.Or:
+				Result.Append("float(");
 				EncapsulateNoValue(expression.LeftExpression);
 				Result.Append("|| ");
 				EncapsulateNoValue(expression.RightExpression);
+				Result.Append(") ");
 				break;
 
 			case BinaryExpressionType.Equal:
-				Result.Append("float(");
+				Result.Append("float(abs(");
 				EncapsulateNoValue(expression.LeftExpression);
-				Result.Append("== ");
+				Result.Append("- ");
 				EncapsulateNoValue(expression.RightExpression);
-				Result.Append(") ");
+				Result.Append(") < float(" + m_epsilon + ")) ");
 				break;
 
 			case BinaryExpressionType.Greater:
@@ -72,11 +84,11 @@ public class GLSLVisitor : SerializationVisitor
 				break;
 
 			case BinaryExpressionType.NotEqual:
-				Result.Append("float(");
+				Result.Append("float(abs(");
 				EncapsulateNoValue(expression.LeftExpression);
-				Result.Append("!= ");
+				Result.Append("- ");
 				EncapsulateNoValue(expression.RightExpression);
-				Result.Append(") ");
+				Result.Append(") >= float(" + m_epsilon + ")) ");
 				break;
 
 			default:
@@ -102,8 +114,8 @@ public class GLSLVisitor : SerializationVisitor
 
 	public override void Visit(Function function)
 	{
-		ValueTuple<string, int, Func<string[], string>> tuple = Array.Find(ExpressionShader.m_randomExpressionFunctions, tuple => tuple.Item1.ToLower() == function.Identifier.Name.ToLower() && tuple.Item3 != null);
-		if (tuple.Item3 == null)
+		ExpressionShader.RandomizationFunction funcOption = Array.Find(ExpressionShader.m_randomizationFunctions, funcOption => funcOption.m_name.ToLower() == function.Identifier.Name.ToLower() && funcOption.m_glslConverter != null);
+		if (funcOption.m_glslConverter == null)
 		{
 			base.Visit(function);
 			return;
@@ -111,11 +123,11 @@ public class GLSLVisitor : SerializationVisitor
 
 		string[] args = function.Expressions.Select(lExp =>
 		{
-			GLSLVisitor argVisitor = new GLSLVisitor();
+			GLSLVisitor argVisitor = new GLSLVisitor(m_epsilon);
 			lExp.Accept(argVisitor);
 			return argVisitor.Result.ToString();
 		}).ToArray();
-		Result.Append(tuple.Item3(args));
+		Result.Append(funcOption.m_glslConverter(args));
 	}
 
 	public override void Visit(Identifier parameter)

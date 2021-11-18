@@ -26,6 +26,8 @@ public static class Utility
 
 	public static T RandomWeighted<T>(T[] values, float[] weights)
 	{
+		Assert.IsFalse(weights.Any(f => f < 0.0f));
+
 		// NOTE the array slice to handle values[] w/ shorter length than weights[] by ignoring the excess weights; the opposite situation works out equivalently w/o explicit handling since weightRandom will never result in looping beyond the number of weights given
 		float weightSum = new ArraySegment<float>(weights, 0, Math.Min(values.Length, weights.Length)).Sum();
 		float weightRandom = UnityEngine.Random.Range(0.0f, weightSum);

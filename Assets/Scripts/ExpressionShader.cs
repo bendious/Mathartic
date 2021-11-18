@@ -9,12 +9,14 @@ using UnityEngine.Assertions;
 
 public class ExpressionShader
 {
-	public float m_xMin;
-	public float m_xMax;
-	public float m_yMin;
-	public float m_yMax;
-	public float m_outMin;
-	public float m_outMax;
+	public float m_xMin = -1.0f;
+	public float m_xMax = 1.0f;
+	public float m_yMin = -1.0f;
+	public float m_yMax = 1.0f;
+	public float m_outMin = -1.0f;
+	public float m_outMax = 1.0f;
+
+	public float m_epsilon = 0.005f;
 
 
 	private Expression[] m_expressionsPrev;
@@ -61,30 +63,44 @@ public class ExpressionShader
 
 	// see https://riptutorial.com/ncalc/learn/100004/functions and/or https://github.com/ncalc/ncalc/blob/master/Evaluant.Calculator/Domain/EvaluationVisitor.cs for NCalc function list
 	// TODO: extract into separate class?
-	public static readonly ValueTuple<string, int, Func<string[], string>>[] m_randomExpressionFunctions = {
-		("Abs", 1, null),
-		("Acos", 1, null),
-		("Asin", 1, null),
-		("Atan", 1, null),
-		("Ceiling", 1, args => "ceil" + FormatArg(args.First()) + " "),
-		("Cos", 1, null),
-		("Exp", 1, null),
-		("Floor", 1, null),
-		("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + "))) "),
-		//("Ln", 1, args => "log" + FormatArg(args.First()) + " "), // TODO: update NCalc.dll to include the newest code to support this?
-		("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
-		("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
-		("Pow", 2, null),
-		("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10.0, " + FormatArg(args[1]) + ")) / pow(10.0, " + FormatArg(args[1]) + ")) "),
-		("Sign", 1, null),
-		("Sin", 1, null),
-		("Sqrt", 1, null),
-		("Tan", 1, null),
-		("Truncate", 1, args => "float(int" + FormatArg(args.First()) + ") "),
-		("Max", 2, null),
-		("Min", 2, null),
-		("if", 3, args => "(bool" + FormatArg(args.First()) + " ? " + FormatArg(args[1]) + " : " + FormatArg(args[2]) + ") "),
-		/*("in", >1, null),*/
+	public struct RandomizationFunction
+	{
+		public string m_name;
+		public int m_paramCount;
+		public Func<string[], string> m_glslConverter;
+		public bool m_isDiscontinuous;
+		public RandomizationFunction(string name, int paramCount = 1, Func<string[], string> glslConverter = null, bool isDiscontinuous = true)
+		{
+			m_name = name;
+			m_paramCount = paramCount;
+			m_glslConverter = glslConverter;
+			m_isDiscontinuous = isDiscontinuous;
+		}
+	}
+	public static readonly RandomizationFunction[] m_randomizationFunctions = {
+		new RandomizationFunction("Abs", 1, null, false),
+		new RandomizationFunction("Acos"), // TODO: make continuous?
+		new RandomizationFunction("Asin"), // TODO: make continuous?
+		new RandomizationFunction("Atan", 1, null, false),
+		new RandomizationFunction("Ceiling", 1, args => "ceil" + FormatArg(args.First()) + " "),
+		new RandomizationFunction("Cos", 1, null, false),
+		new RandomizationFunction("Exp", 1, null, false),
+		new RandomizationFunction("Floor"),
+		new RandomizationFunction("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + "))) "),
+		//new RandomizationFunction("Ln", 1, args => "log" + FormatArg(args.First()) + " "), // TODO: update NCalc.dll to include the newest code to support this?
+		new RandomizationFunction("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
+		new RandomizationFunction("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
+		new RandomizationFunction("Pow", 2),
+		new RandomizationFunction("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10.0, " + FormatArg(args[1]) + ")) / pow(10.0, " + FormatArg(args[1]) + ")) "),
+		new RandomizationFunction("Sign"),
+		new RandomizationFunction("Sin", 1, null, false),
+		new RandomizationFunction("Sqrt"),//TODO: make continuous?
+		new RandomizationFunction("Tan"),
+		new RandomizationFunction("Truncate", 1, args => "float(int" + FormatArg(args.First()) + ") "),
+		new RandomizationFunction("Max", 2, null, false),
+		new RandomizationFunction("Min", 2, null, false),
+		new RandomizationFunction("if", 3, args => "(bool" + FormatArg(args.First()) + " ? " + FormatArg(args[1]) + " : " + FormatArg(args[2]) + ") "),
+		//new RandomizationFunction("in", >1),
 	};
 
 
@@ -94,19 +110,19 @@ public class ExpressionShader
 		1.0f, // Negate
 		0.0f, // BitwiseNot
 	};
-	private static readonly float[] m_binaryExpressionWeights = {
+	private static readonly float[] m_binaryExpressionWeights = { // TODO: discontinuous flag rather than assuming that half-weight means discontinuous?
 		0.0f, // And
 		0.0f, // Or
-		0.0f, // NotEqual
-		0.0f, // LesserOrEqual
-		0.0f, // GreaterOrEqual
-		0.0f, // Lesser
-		0.0f, // Greater
-		0.0f, // Equal
+		0.5f, // NotEqual
+		0.5f, // LesserOrEqual
+		0.5f, // GreaterOrEqual
+		0.5f, // Lesser
+		0.5f, // Greater
+		0.5f, // Equal
 		1.0f, // Minus
 		1.0f, // Plus
 		0.0f, // Modulo
-		1.0f, // Div
+		0.5f, // Div
 		1.0f, // Times
 		0.0f, // BitwiseOr
 		0.0f, // BitwiseAnd
@@ -125,9 +141,9 @@ public class ExpressionShader
 		TernaryExpression,
 		NumTypes
 	};
-	private static readonly float[] m_expressionTypeWeights = {
-		m_binaryExpressionWeights.Count(f => (f > 0.0f)), // TODO: improve weighting for values?
-		m_randomExpressionFunctions.Length,
+	private static float[] m_expressionTypeWeights = {
+		m_binaryExpressionWeights.Count(f => f > 0.5f), // TODO: improve weighting for values?
+		m_randomizationFunctions.Length,
 		m_unaryExpressionWeights.Count(f => f > 0.0f),
 		m_binaryExpressionWeights.Count(f => f > 0.0f),
 		1.0f,
@@ -190,14 +206,14 @@ public class ExpressionShader
 		return errorList.ToArray();
 	}
 
-	public string[] Randomize(uint recursionMax)
+	public string[] Randomize(uint recursionMax, bool discontinuous)
 	{
 		// create random expression(s)
 		// TODO: create/utilize params?
 		string[] expsRandStrings = {
-			RandomExpression(recursionMax).ToString(),
-			RandomExpression(recursionMax).ToString(),
-			RandomExpression(recursionMax).ToString(),
+			RandomExpression(recursionMax, discontinuous).ToString(),
+			RandomExpression(recursionMax, discontinuous).ToString(),
+			RandomExpression(recursionMax, discontinuous).ToString(),
 		};
 
 		// update
@@ -264,20 +280,22 @@ public class ExpressionShader
 		return '(' + argStr + ')'; // extra parentheses to avoid precedence issues
 	}
 
-	private static string FormatExpressionString(Expression expression)
+	private string FormatExpressionString(Expression expression)
 	{
 		Assert.IsNotNull(expression);
 		LogicalExpression expParsed = expression.ParsedExpression;
 		Assert.IsNotNull(expParsed);
 
-		GLSLVisitor stringifier = new GLSLVisitor();
+		GLSLVisitor stringifier = new GLSLVisitor(m_epsilon);
 		expParsed.Accept(stringifier);
 		return stringifier.Result.ToString().ToLower(); // TODO: move lowercasing into GLSLVisitor somewhere?
 	}
 
-	private static LogicalExpression RandomExpression(uint recursionMax)
+	private static LogicalExpression RandomExpression(uint recursionMax, bool discontinuous)
 	{
 		Assert.AreEqual((int)ExpressionType.NumTypes, m_expressionTypeWeights.Length);
+		m_expressionTypeWeights[(int)ExpressionType.BinaryExpression] = m_binaryExpressionWeights.Count(f => f > (discontinuous ? 0.0f : 0.5f));
+		m_expressionTypeWeights[(int)ExpressionType.TernaryExpression] = discontinuous ? 1.0f : 0.0f;
 		ExpressionType type = recursionMax <= 0 ? ExpressionType.ValueExpression : Utility.RandomWeightedEnum<ExpressionType>(m_expressionTypeWeights);
 		uint recursionNext = recursionMax - 1;
 		switch (type)
@@ -289,24 +307,25 @@ public class ExpressionShader
 			}
 			case ExpressionType.Function:
 			{
-				ValueTuple<string, int, Func<string[], string>> functionAndParamCount = m_randomExpressionFunctions[UnityEngine.Random.Range(0, m_randomExpressionFunctions.Length)]; // TODO: differential weighting?
-				LogicalExpression[] args = Enumerable.Repeat(0, functionAndParamCount.Item2).Select(i => RandomExpression(recursionNext)).ToArray();
-				return new Function(new Identifier(functionAndParamCount.Item1), args);
+				RandomizationFunction[] functionList = discontinuous ? m_randomizationFunctions : m_randomizationFunctions.Where(tuple => !tuple.m_isDiscontinuous).ToArray();
+				RandomizationFunction functionAndParamCount = functionList[UnityEngine.Random.Range(0, functionList.Length)]; // TODO: differential weighting?
+				LogicalExpression[] args = Enumerable.Repeat(0, functionAndParamCount.m_paramCount).Select(i => RandomExpression(recursionNext, discontinuous)).ToArray();
+				return new Function(new Identifier(functionAndParamCount.m_name), args);
 			}
 			case ExpressionType.UnaryExpression:
 			{
 				UnaryExpressionType innerType = Utility.RandomWeightedEnum<UnaryExpressionType>(m_unaryExpressionWeights);
-				return new UnaryExpression(innerType, RandomExpression(recursionNext));
+				return new UnaryExpression(innerType, RandomExpression(recursionNext, discontinuous));
 			}
 			case ExpressionType.BinaryExpression:
 			{
-				BinaryExpressionType innerType = Utility.RandomWeightedEnum<BinaryExpressionType>(m_binaryExpressionWeights);
-				return new BinaryExpression(innerType, RandomExpression(recursionNext), RandomExpression(recursionNext));
+				BinaryExpressionType innerType = Utility.RandomWeightedEnum<BinaryExpressionType>(discontinuous ? m_binaryExpressionWeights : m_binaryExpressionWeights.Select(f => Math.Max(0.0f, f - 0.5f)).ToArray());
+				return new BinaryExpression(innerType, RandomExpression(recursionNext, discontinuous), RandomExpression(recursionNext, discontinuous));
 			}
 			case ExpressionType.TernaryExpression:
 			{
 				BinaryExpressionType innerType = (BinaryExpressionType)UnityEngine.Random.Range((int)BinaryExpressionType.NotEqual, (int)BinaryExpressionType.Equal); // TODO: don't assume current BinaryExpressionType ordering?
-				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(recursionNext), RandomExpression(recursionNext)), RandomExpression(recursionNext), RandomExpression(recursionNext));
+				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(recursionNext, discontinuous), RandomExpression(recursionNext, discontinuous)), RandomExpression(recursionNext, discontinuous), RandomExpression(recursionNext, discontinuous));
 			}
 			default:
 				Assert.IsTrue(false, "Unhandled ExpressionType");
