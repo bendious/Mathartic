@@ -44,9 +44,14 @@ public class RuntimeShader : MonoBehaviour
 		try
 		{
 			m_shaderReady = UpdateGLShader(srcDataVert, srcDataFrag);
-			m_startTime = Time.time;
+			ResetTime();
 		}
 		catch (Exception) { m_shaderReady = false; }
+	}
+
+	public void ResetTime()
+	{
+		m_startTime = Time.time;
 	}
 
 
