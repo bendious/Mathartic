@@ -151,11 +151,11 @@ public class ExpressionShader
 	private static readonly float[] m_valueTypeWeights = { 0.1f, 1.0f, 1.0f, 2.0f };
 
 
-	public Exception[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramNamesExpressionsRaw)
+	public string[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramNamesExpressionsRaw)
 	{
 		// evaluate raw strings into expressions
 		string[] paramNames = paramNamesExpressionsRaw?.Select(tuple => tuple.Item1).ToArray();
-		List<Exception> errorList = new List<Exception>();
+		List<string> errorList = new List<string>();
 		errorList.AddRange(ExpressionsFromStrings(expressionsRaw, m_expressionsPrev, paramNames, str => str, (exp, input) => exp, out Expression[] expressions));
 		errorList.AddRange(ExpressionsFromStrings(paramNamesExpressionsRaw, m_paramNamesExpressionsPrev, paramNames, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramNamesExpressions));
 
@@ -226,32 +226,32 @@ public class ExpressionShader
 	}
 
 
-	private static List<Exception> ExpressionsFromStrings<T1, T2>(T1[] inputRaw, T2[] prevValues, string[] paramNames, Func<T1, string> inputToExpStr, Func<Expression, T1, T2> expToOutput, out T2[] output)
+	private static List<string> ExpressionsFromStrings<T1, T2>(T1[] inputRaw, T2[] prevValues, string[] paramNames, Func<T1, string> inputToExpStr, Func<Expression, T1, T2> expToOutput, out T2[] output)
 	{
-		List<Exception> errorList = new List<Exception>();
+		List<string> errorList = new List<string>();
 		output = ZipSafe(inputRaw, prevValues, (input, prevValue) =>
 		{
-			try
+			string text = inputToExpStr(input);
+			Expression expNew = new Expression(string.IsNullOrEmpty(text) ? "0.0" : text, EvaluateOptions.IgnoreCase);
+			expNew.Parameters.Add("t", 0.0f);
+			expNew.Parameters.Add("x", 0.0f);
+			expNew.Parameters.Add("y", 0.0f);
+			if (paramNames != null)
 			{
-				string text = inputToExpStr(input);
-				Expression expNew = new Expression(string.IsNullOrEmpty(text) ? "0.0" : text, EvaluateOptions.IgnoreCase);
-				expNew.Parameters.Add("t", 0.0f);
-				expNew.Parameters.Add("x", 0.0f);
-				expNew.Parameters.Add("y", 0.0f);
-				if (paramNames != null)
+				foreach (string paramName in paramNames.Where(name => !string.IsNullOrEmpty(name)))
 				{
-					foreach (string paramName in paramNames)
-					{
-						expNew.Parameters.Add(paramName, 0.0f);
-					}
+					expNew.Parameters.Add(paramName, 0.0f);
 				}
-				expNew.Evaluate();
+			}
+			bool hasErrors = expNew.HasErrors(); // this also compiles the expression into Expression.ParsedExpression, which is what we actually use later
+			if (!hasErrors)
+			{
 				errorList.Add(null);
 				return expToOutput(expNew, input);
 			}
-			catch (Exception e)
+			else
 			{
-				errorList.Add(e);
+				errorList.Add(expNew.Error);
 				return prevValue;
 			}
 		}, false, true).ToArray();
@@ -285,7 +285,10 @@ public class ExpressionShader
 	{
 		Assert.IsNotNull(expression);
 		LogicalExpression expParsed = expression.ParsedExpression;
-		Assert.IsNotNull(expParsed);
+		if (expParsed == null)
+		{
+			return "0.0"; // the expression must have errors, so ignore it
+		}
 
 		GLSLVisitor stringifier = new GLSLVisitor(m_epsilon);
 		expParsed.Accept(stringifier);

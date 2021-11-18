@@ -5,6 +5,9 @@ using UnityEngine.Assertions;
 [RequireComponent(typeof(RectTransform))]
 public class ChildContentManager : MonoBehaviour
 {
+	public GameObject m_lowerBoundObject;
+
+
 	public void Add()
 	{
 		GameObject placeholderChild = transform.GetChild(0).gameObject;
@@ -40,5 +43,12 @@ public class ChildContentManager : MonoBehaviour
 	{
 		RectTransform contentRect = GetComponent<RectTransform>();
 		contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, height);
+
+		// resize parent between minimum/maximum height
+		RectTransform parentRect = contentRect.parent.parent.GetComponent<RectTransform>();
+		float heightMin = transform.GetChild(0).GetComponent<RectTransform>().rect.height;
+		RectTransform lowerBoundRect = m_lowerBoundObject.GetComponent<RectTransform>();
+		float heightMax = parentRect.parent.GetComponent<RectTransform>().rect.height - Mathf.Abs(parentRect.anchoredPosition.y) - (lowerBoundRect.anchoredPosition.y + lowerBoundRect.rect.height); // TODO: don't assume the lower bound object is anchored to the bottom of the canvas?
+		parentRect.sizeDelta = new Vector2(parentRect.sizeDelta.x, Mathf.Clamp(height, heightMin, heightMax));
 	}
 }

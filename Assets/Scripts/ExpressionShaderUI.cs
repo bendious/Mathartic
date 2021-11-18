@@ -46,13 +46,13 @@ public class ExpressionShaderUI : MonoBehaviour
 		ValueTuple<string, string>[] paramNamesExpressionsRaw = m_paramFields.Select(fields => (fields.Item1.text, fields.Item2.text)).ToArray();
 
 		// pass in for evaluation
-		Exception[] errors = m_internals.UpdateShader(expressionsRaw, paramNamesExpressionsRaw);
+		string[] errors = m_internals.UpdateShader(expressionsRaw, paramNamesExpressionsRaw);
 		Assert.AreEqual(errors.Length, expressionsRaw.Length + paramNamesExpressionsRaw.Length);
 
 		// update error messages
-		foreach (ValueTuple<ValueTuple<InputField, Text>, Exception> tuple in fieldPairs.Concat(m_paramFields.Select(fields => (fields.Item2, fields.Item3))).Zip(errors, (pair, err) => (pair, err)))
+		foreach (ValueTuple<ValueTuple<InputField, Text>, string> tuple in fieldPairs.Concat(m_paramFields.Select(fields => (fields.Item2, fields.Item3))).Zip(errors, (pair, err) => (pair, err)))
 		{
-			UpdateErrorText(tuple.Item1.Item2, tuple.Item2 == null ? "" : tuple.Item2.Message, tuple.Item1.Item1);
+			UpdateErrorText(tuple.Item1.Item2, tuple.Item2, tuple.Item1.Item1);
 		}
 	}
 
@@ -120,7 +120,7 @@ public class ExpressionShaderUI : MonoBehaviour
 	{
 		// update text
 		Assert.IsNotNull(errorText);
-		errorText.text = str;
+		errorText.text = str ?? "";
 
 		// resize field to meet errorText w/o overlap
 		// TODO: don't assume field is left-aligned and errorText is right-aligned and content-sized?
