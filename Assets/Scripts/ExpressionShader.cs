@@ -79,8 +79,8 @@ public class ExpressionShader
 	}
 	public static readonly RandomizationFunction[] m_randomizationFunctions = {
 		new RandomizationFunction("Abs", 1, null, false),
-		new RandomizationFunction("Acos"), // TODO: make continuous?
-		new RandomizationFunction("Asin"), // TODO: make continuous?
+		new RandomizationFunction("Acos", 1, args => "((" + args.First() + ") < -1.0 ? 3.14159 : ((" + args.First() + ") > 1.0 ? 0.0 : acos(" + args.First() + "))) ", false), // NOTE the departure from acos() of being undefined beyond [-1,1], in order to make the function continuous
+		new RandomizationFunction("Asin", 1, args => "((" + args.First() + ") < -1.0 ? -1.570795 : ((" + args.First() + ") > 1.0 ? 1.570795 : asin(" + args.First() + "))) ", false), // NOTE the departure from asin() being undefined beyond [-1,1], in order to make the function continuous
 		new RandomizationFunction("Atan", 1, null, false),
 		new RandomizationFunction("Ceiling", 1, args => "ceil" + FormatArg(args.First()) + " "),
 		new RandomizationFunction("Cos", 1, null, false),
@@ -94,7 +94,7 @@ public class ExpressionShader
 		new RandomizationFunction("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10.0, " + FormatArg(args[1]) + ")) / pow(10.0, " + FormatArg(args[1]) + ")) "),
 		new RandomizationFunction("Sign"),
 		new RandomizationFunction("Sin", 1, null, false),
-		new RandomizationFunction("Sqrt"),//TODO: make continuous?
+		new RandomizationFunction("Sqrt", 1, args => "(" + args.First() + "< 0.0 ? 0.0 : sqrt(" + args.First() + ")) ", false), // NOTE the departure from sqrt() of negative numbers being undefined, in order to make the function continuous
 		new RandomizationFunction("Tan"),
 		new RandomizationFunction("Truncate", 1, args => "float(int" + FormatArg(args.First()) + ") "),
 		new RandomizationFunction("Max", 2, null, false),
@@ -148,6 +148,7 @@ public class ExpressionShader
 		m_binaryExpressionWeights.Count(f => f > 0.0f),
 		1.0f,
 	};
+	private static readonly float[] m_valueTypeWeights = { 0.1f, 1.0f, 1.0f, 2.0f };
 
 
 	public Exception[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramNamesExpressionsRaw)
@@ -302,8 +303,9 @@ public class ExpressionShader
 		{
 			case ExpressionType.ValueExpression:
 			{
-				LogicalExpression[] values = { new ValueExpression(UnityEngine.Random.value), new Identifier("x"), new Identifier("y"), new Identifier("t") }; // TODO: create/utilize parameters?
-				return values[UnityEngine.Random.Range(0, values.Length)]; // TODO: differential weighting?
+				LogicalExpression[] values = { new ValueExpression(UnityEngine.Random.value * 2.0f), new Identifier("x"), new Identifier("y"), new Identifier("t") }; // TODO: create/utilize parameters? base scalar value range on parent/sibling expression type?
+				Assert.AreEqual(values.Length, m_valueTypeWeights.Length);
+				return Utility.RandomWeighted(values, m_valueTypeWeights);
 			}
 			case ExpressionType.Function:
 			{
