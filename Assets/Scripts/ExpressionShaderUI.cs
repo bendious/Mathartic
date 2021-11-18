@@ -43,11 +43,11 @@ public class ExpressionShaderUI : MonoBehaviour
 		// get expression strings
 		ValueTuple<InputField, Text>[] fieldPairs = { (m_rField, m_rErrorText), (m_gField, m_gErrorText), (m_bField, m_bErrorText) };
 		string[] expressionsRaw = fieldPairs.Select(pair => pair.Item1.text).ToArray();
-		ValueTuple<string, string>[] paramNamesExpressionsRaw = m_paramFields.Select(fields => (fields.Item1.text, fields.Item2.text)).ToArray();
+		ValueTuple<string, string>[] paramsRaw = m_paramFields.Select(fields => (fields.Item1.text, fields.Item2.text)).ToArray();
 
 		// pass in for evaluation
-		string[] errors = m_internals.UpdateShader(expressionsRaw, paramNamesExpressionsRaw);
-		Assert.AreEqual(errors.Length, expressionsRaw.Length + paramNamesExpressionsRaw.Length);
+		string[] errors = m_internals.UpdateShader(expressionsRaw, paramsRaw);
+		Assert.AreEqual(errors.Length, expressionsRaw.Length + paramsRaw.Length);
 
 		// update error messages
 		foreach (ValueTuple<ValueTuple<InputField, Text>, string> tuple in fieldPairs.Concat(m_paramFields.Select(fields => (fields.Item2, fields.Item3))).Zip(errors, (pair, err) => (pair, err)))
@@ -102,7 +102,8 @@ public class ExpressionShaderUI : MonoBehaviour
 		catch (Exception) { }
 
 		// randomize & update shader
-		string[] expStrings = m_internals.Randomize(recursionMax, m_randomizeDiscontinuousToggle.isOn);
+		ValueTuple<string, string>[] paramsRaw = m_paramFields.Select(fields => (fields.Item1.text, fields.Item2.text)).ToArray();
+		string[] expStrings = m_internals.Randomize(recursionMax, m_randomizeDiscontinuousToggle.isOn, paramsRaw);
 
 		// fill in text fields
 		// TODO: detect & eliminate redundant parentheses?

@@ -20,7 +20,7 @@ public class ExpressionShader
 
 
 	private Expression[] m_expressionsPrev;
-	private ValueTuple<string, Expression>[] m_paramNamesExpressionsPrev;
+	private ValueTuple<string, Expression>[] m_paramsPrev;
 	private string m_fragShaderPrev;
 
 
@@ -151,13 +151,13 @@ public class ExpressionShader
 	private static readonly float[] m_valueTypeWeights = { 0.1f, 1.0f, 1.0f, 2.0f };
 
 
-	public string[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramNamesExpressionsRaw)
+	public string[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramsRaw)
 	{
 		// evaluate raw strings into expressions
-		string[] paramNames = paramNamesExpressionsRaw?.Select(tuple => tuple.Item1).ToArray();
+		string[] paramNames = paramsRaw?.Select(tuple => tuple.Item1).ToArray();
 		List<string> errorList = new List<string>();
 		errorList.AddRange(ExpressionsFromStrings(expressionsRaw, m_expressionsPrev, paramNames, str => str, (exp, input) => exp, out Expression[] expressions));
-		errorList.AddRange(ExpressionsFromStrings(paramNamesExpressionsRaw, m_paramNamesExpressionsPrev, paramNames, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramNamesExpressions));
+		errorList.AddRange(ExpressionsFromStrings(paramsRaw, m_paramsPrev, paramNames, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramsCur));
 
 		// early-out if nothing to update
 		// TODO: compare against previous expressions?
@@ -172,10 +172,10 @@ public class ExpressionShader
 		shaderStrFrag += "	float y = mix(" + FormatFloat(m_yMin) + ", " + FormatFloat(m_yMax) + ", " + "texCoord.y);\n";
 
 		// parse params
-		if (paramNamesExpressions != null || m_paramNamesExpressionsPrev != null)
+		if (paramsCur != null || m_paramsPrev != null)
 		{
 			// TODO: order param definitions to deliberately support iteration? break into pieces to support recursion?
-			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramNamesExpressions, m_paramNamesExpressionsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, true).Where(tuple => !string.IsNullOrEmpty(tuple.Item1) && tuple.Item2 != null))
+			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramsCur, m_paramsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, true).Where(tuple => !string.IsNullOrEmpty(tuple.Item1) && tuple.Item2 != null))
 			{
 				shaderStrFrag += "	float " + tuple.Item1 + " = " + FormatExpressionString(tuple.Item2) + ";\n";
 			}
@@ -200,25 +200,25 @@ public class ExpressionShader
 			Camera.main.GetComponent<RuntimeShader>().UpdateShader(m_shaderStrVert, shaderStrFrag);
 
 			m_expressionsPrev = expressions;
-			m_paramNamesExpressionsPrev = paramNamesExpressions;
+			m_paramsPrev = paramsCur;
 			m_fragShaderPrev = shaderStrFrag;
 		}
 
 		return errorList.ToArray();
 	}
 
-	public string[] Randomize(uint recursionMax, bool discontinuous)
+	public string[] Randomize(uint recursionMax, bool discontinuous, ValueTuple<string, string>[] paramsRaw)
 	{
 		// create random expression(s)
 		// TODO: create/utilize params?
 		string[] expsRandStrings = {
-			RandomExpression(recursionMax, discontinuous).ToString(),
-			RandomExpression(recursionMax, discontinuous).ToString(),
-			RandomExpression(recursionMax, discontinuous).ToString(),
+			RandomExpression(recursionMax, discontinuous, paramsRaw).ToString(),
+			RandomExpression(recursionMax, discontinuous, paramsRaw).ToString(),
+			RandomExpression(recursionMax, discontinuous, paramsRaw).ToString(),
 		};
 
 		// update
-		UpdateShader(expsRandStrings, null);
+		UpdateShader(expsRandStrings, paramsRaw);
 
 		// return strings for text fields
 		// TODO: detect & eliminate redundant parentheses?
@@ -295,7 +295,7 @@ public class ExpressionShader
 		return stringifier.Result.ToString().ToLower(); // TODO: move lowercasing into GLSLVisitor somewhere?
 	}
 
-	private static LogicalExpression RandomExpression(uint recursionMax, bool discontinuous)
+	private static LogicalExpression RandomExpression(uint recursionMax, bool discontinuous, ValueTuple<string, string>[] paramsRaw)
 	{
 		Assert.AreEqual((int)ExpressionType.NumTypes, m_expressionTypeWeights.Length);
 		m_expressionTypeWeights[(int)ExpressionType.BinaryExpression] = m_binaryExpressionWeights.Count(f => f > (discontinuous ? 0.0f : 0.5f));
@@ -306,31 +306,38 @@ public class ExpressionShader
 		{
 			case ExpressionType.ValueExpression:
 			{
-				LogicalExpression[] values = { new ValueExpression(UnityEngine.Random.value * 2.0f), new Identifier("x"), new Identifier("y"), new Identifier("t") }; // TODO: create/utilize parameters? base scalar value range on parent/sibling expression type?
-				Assert.AreEqual(values.Length, m_valueTypeWeights.Length);
-				return Utility.RandomWeighted(values, m_valueTypeWeights);
+				// enumerate valid values/parameters
+				List<LogicalExpression> values = new List<LogicalExpression>(new LogicalExpression[] { new ValueExpression(UnityEngine.Random.value * 2.0f), new Identifier("x"), new Identifier("y"), new Identifier("t") }); // TODO: base scalar value range on parent/sibling expression type?
+				IEnumerable<string> paramsCulled = paramsRaw.Where(nameExp => !string.IsNullOrEmpty(nameExp.Item1)).Select(nameExp => nameExp.Item1); // TODO: check whether expression string is valid? chance to create/remove parameters?
+				values.AddRange(paramsCulled.Select(name => new Identifier(name)));
+
+				// enumerate weights and select
+				int paramsCulledCount = paramsCulled.Count();
+				Assert.AreEqual(values.Count(), m_valueTypeWeights.Length + paramsCulledCount);
+				const float paramWeight = 2.0f;
+				return Utility.RandomWeighted(values.ToArray(), m_valueTypeWeights.Concat(Enumerable.Repeat(paramWeight, paramsCulledCount)).ToArray());
 			}
 			case ExpressionType.Function:
 			{
 				RandomizationFunction[] functionList = discontinuous ? m_randomizationFunctions : m_randomizationFunctions.Where(tuple => !tuple.m_isDiscontinuous).ToArray();
 				RandomizationFunction functionAndParamCount = functionList[UnityEngine.Random.Range(0, functionList.Length)]; // TODO: differential weighting?
-				LogicalExpression[] args = Enumerable.Repeat(0, functionAndParamCount.m_paramCount).Select(i => RandomExpression(recursionNext, discontinuous)).ToArray();
+				LogicalExpression[] args = Enumerable.Repeat(0, functionAndParamCount.m_paramCount).Select(i => RandomExpression(recursionNext, discontinuous, paramsRaw)).ToArray();
 				return new Function(new Identifier(functionAndParamCount.m_name), args);
 			}
 			case ExpressionType.UnaryExpression:
 			{
 				UnaryExpressionType innerType = Utility.RandomWeightedEnum<UnaryExpressionType>(m_unaryExpressionWeights);
-				return new UnaryExpression(innerType, RandomExpression(recursionNext, discontinuous));
+				return new UnaryExpression(innerType, RandomExpression(recursionNext, discontinuous, paramsRaw));
 			}
 			case ExpressionType.BinaryExpression:
 			{
 				BinaryExpressionType innerType = Utility.RandomWeightedEnum<BinaryExpressionType>(discontinuous ? m_binaryExpressionWeights : m_binaryExpressionWeights.Select(f => Math.Max(0.0f, f - 0.5f)).ToArray());
-				return new BinaryExpression(innerType, RandomExpression(recursionNext, discontinuous), RandomExpression(recursionNext, discontinuous));
+				return new BinaryExpression(innerType, RandomExpression(recursionNext, discontinuous, paramsRaw), RandomExpression(recursionNext, discontinuous, paramsRaw));
 			}
 			case ExpressionType.TernaryExpression:
 			{
 				BinaryExpressionType innerType = (BinaryExpressionType)UnityEngine.Random.Range((int)BinaryExpressionType.NotEqual, (int)BinaryExpressionType.Equal); // TODO: don't assume current BinaryExpressionType ordering?
-				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(recursionNext, discontinuous), RandomExpression(recursionNext, discontinuous)), RandomExpression(recursionNext, discontinuous), RandomExpression(recursionNext, discontinuous));
+				return new TernaryExpression(new BinaryExpression(innerType, RandomExpression(recursionNext, discontinuous, paramsRaw), RandomExpression(recursionNext, discontinuous, paramsRaw)), RandomExpression(recursionNext, discontinuous, paramsRaw), RandomExpression(recursionNext, discontinuous, paramsRaw));
 			}
 			default:
 				Assert.IsTrue(false, "Unhandled ExpressionType");
