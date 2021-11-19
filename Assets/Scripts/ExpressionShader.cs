@@ -61,49 +61,6 @@ public class ExpressionShader
 		+ "{\n";
 
 
-	// see https://riptutorial.com/ncalc/learn/100004/functions and/or https://github.com/ncalc/ncalc/blob/master/Evaluant.Calculator/Domain/EvaluationVisitor.cs for NCalc function list
-	// TODO: extract into separate class?
-	public struct RandomizationFunction
-	{
-		public string m_name;
-		public int m_paramCount;
-		public Func<string[], string> m_glslConverter;
-		public bool m_isDiscontinuous;
-		public RandomizationFunction(string name, int paramCount = 1, Func<string[], string> glslConverter = null, bool isDiscontinuous = true)
-		{
-			m_name = name;
-			m_paramCount = paramCount;
-			m_glslConverter = glslConverter;
-			m_isDiscontinuous = isDiscontinuous;
-		}
-	}
-	public static readonly RandomizationFunction[] m_randomizationFunctions = {
-		new RandomizationFunction("Abs", 1, null, false),
-		new RandomizationFunction("Acos", 1, args => "((" + args.First() + ") < -1.0 ? 3.14159 : ((" + args.First() + ") > 1.0 ? 0.0 : acos(" + args.First() + "))) ", false), // NOTE the departure from acos() of being undefined beyond [-1,1], in order to make the function continuous
-		new RandomizationFunction("Asin", 1, args => "((" + args.First() + ") < -1.0 ? -1.570795 : ((" + args.First() + ") > 1.0 ? 1.570795 : asin(" + args.First() + "))) ", false), // NOTE the departure from asin() being undefined beyond [-1,1], in order to make the function continuous
-		new RandomizationFunction("Atan", 1, null, false),
-		new RandomizationFunction("Ceiling", 1, args => "ceil" + FormatArg(args.First()) + " "),
-		new RandomizationFunction("Cos", 1, null, false),
-		new RandomizationFunction("Exp", 1, null, false),
-		new RandomizationFunction("Floor"),
-		new RandomizationFunction("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + "))) "),
-		//new RandomizationFunction("Ln", 1, args => "log" + FormatArg(args.First()) + " "), // TODO: update NCalc.dll to include the newest code to support this?
-		new RandomizationFunction("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
-		new RandomizationFunction("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
-		new RandomizationFunction("Pow", 2),
-		new RandomizationFunction("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10.0, " + FormatArg(args[1]) + ")) / pow(10.0, " + FormatArg(args[1]) + ")) "),
-		new RandomizationFunction("Sign"),
-		new RandomizationFunction("Sin", 1, null, false),
-		new RandomizationFunction("Sqrt", 1, args => "(" + args.First() + "< 0.0 ? 0.0 : sqrt(" + args.First() + ")) ", false), // NOTE the departure from sqrt() of negative numbers being undefined, in order to make the function continuous
-		new RandomizationFunction("Tan"),
-		new RandomizationFunction("Truncate", 1, args => "float(int" + FormatArg(args.First()) + ") "),
-		new RandomizationFunction("Max", 2, null, false),
-		new RandomizationFunction("Min", 2, null, false),
-		new RandomizationFunction("if", 3, args => "(bool" + FormatArg(args.First()) + " ? " + FormatArg(args[1]) + " : " + FormatArg(args[2]) + ") "),
-		//new RandomizationFunction("in", >1),
-	};
-
-
 	// TODO: support more of these?
 	private static readonly float[] m_unaryExpressionWeights = {
 		0.0f, // Not
@@ -143,7 +100,7 @@ public class ExpressionShader
 	};
 	private static float[] m_expressionTypeWeights = {
 		m_binaryExpressionWeights.Count(f => f > 0.5f), // TODO: improve weighting for values?
-		m_randomizationFunctions.Length,
+		RandomizationFunction.m_list.Length,
 		m_unaryExpressionWeights.Count(f => f > 0.0f),
 		m_binaryExpressionWeights.Count(f => f > 0.0f),
 		1.0f,
@@ -168,8 +125,8 @@ public class ExpressionShader
 
 		// write fragment shader
 		string shaderStrFrag = m_shaderStrFragPrefix;
-		shaderStrFrag += "	float x = mix(" + FormatFloat(m_xMin) + ", " + FormatFloat(m_xMax) + ", " + "texCoord.x);\n";
-		shaderStrFrag += "	float y = mix(" + FormatFloat(m_yMin) + ", " + FormatFloat(m_yMax) + ", " + "texCoord.y);\n";
+		shaderStrFrag += "	float x = mix(" + Utility.FormatFloatGLSL(m_xMin) + ", " + Utility.FormatFloatGLSL(m_xMax) + ", " + "texCoord.x);\n";
+		shaderStrFrag += "	float y = mix(" + Utility.FormatFloatGLSL(m_yMin) + ", " + Utility.FormatFloatGLSL(m_yMax) + ", " + "texCoord.y);\n";
 
 		// parse params
 		if (paramsCur != null || m_paramsPrev != null)
@@ -187,7 +144,7 @@ public class ExpressionShader
 		Expression[] expressionsFinal = ZipSafe(expressions, m_expressionsPrev, (exp, expPrev) => exp == null && expPrev == null ? null : (exp ?? expPrev), false, true).ToArray();
 		foreach (Expression exp in expressionsFinal)
 		{
-			shaderStrFrag += "inverseLerp(" + FormatFloat(m_outMin) + ", " + FormatFloat(m_outMax) + ", ";
+			shaderStrFrag += "inverseLerp(" + Utility.FormatFloatGLSL(m_outMin) + ", " + Utility.FormatFloatGLSL(m_outMax) + ", ";
 			shaderStrFrag += exp == null ? "0.0" : FormatExpressionString(exp);
 			shaderStrFrag += "), ";
 		}
@@ -270,17 +227,6 @@ public class ExpressionShader
 		return aExtended.Zip(bExtended, f);
 	}
 
-	private static string FormatFloat(float f)
-	{
-		return "float(" + f + ")"; // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints
-	}
-
-	private static string FormatArg(string arg)
-	{
-		string argStr = float.TryParse(arg, out float argFl) ? FormatFloat(argFl) : arg;
-		return '(' + argStr + ')'; // extra parentheses to avoid precedence issues
-	}
-
 	private string FormatExpressionString(Expression expression)
 	{
 		Assert.IsNotNull(expression);
@@ -319,7 +265,7 @@ public class ExpressionShader
 			}
 			case ExpressionType.Function:
 			{
-				RandomizationFunction[] functionList = discontinuous ? m_randomizationFunctions : m_randomizationFunctions.Where(tuple => !tuple.m_isDiscontinuous).ToArray();
+				RandomizationFunction[] functionList = discontinuous ? RandomizationFunction.m_list : RandomizationFunction.m_list.Where(tuple => !tuple.m_isDiscontinuous).ToArray();
 				RandomizationFunction functionAndParamCount = functionList[UnityEngine.Random.Range(0, functionList.Length)]; // TODO: differential weighting?
 				LogicalExpression[] args = Enumerable.Repeat(0, functionAndParamCount.m_paramCount).Select(i => RandomExpression(recursionNext, discontinuous, paramsRaw)).ToArray();
 				return new Function(new Identifier(functionAndParamCount.m_name), args);

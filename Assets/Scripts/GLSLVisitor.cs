@@ -114,8 +114,8 @@ public class GLSLVisitor : SerializationVisitor
 
 	public override void Visit(Function function)
 	{
-		ExpressionShader.RandomizationFunction funcOption = Array.Find(ExpressionShader.m_randomizationFunctions, funcOption => funcOption.m_name.ToLower() == function.Identifier.Name.ToLower() && funcOption.m_glslConverter != null);
-		if (funcOption.m_glslConverter == null)
+		RandomizationFunction funcOption = Array.Find(RandomizationFunction.m_list, funcOption => funcOption.m_name.ToLower() == function.Identifier.Name.ToLower() && funcOption.m_glslConverter != null);
+		if (funcOption == null || funcOption.m_glslConverter == null)
 		{
 			base.Visit(function);
 			return;

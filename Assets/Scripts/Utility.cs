@@ -52,4 +52,9 @@ public static class Utility
 			return (T)Enum.ToObject(typeof(T), i);
 		}).ToArray(), weights);
 	}
+
+	public static string FormatFloatGLSL(float f)
+	{
+		return "float(" + f + ")"; // this prevents GLSL parsing issues from floats w/o decimals being interpreted as ints, w/o truncating to a fixed number of decimals
+	}
 }
