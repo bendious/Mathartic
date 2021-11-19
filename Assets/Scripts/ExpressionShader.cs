@@ -197,6 +197,11 @@ public class ExpressionShader
 			{
 				foreach (string paramName in paramNames.Where(name => !string.IsNullOrEmpty(name)))
 				{
+					if (expNew.Parameters.ContainsKey(paramName))
+					{
+						errorList.Add("Duplicate param name: " + paramName);
+						return prevValue;
+					}
 					expNew.Parameters.Add(paramName, 0.0f);
 				}
 			}

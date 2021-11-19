@@ -28,19 +28,19 @@ public class GLSLVisitor : SerializationVisitor
 		switch (expression.Type)
 		{
 			case BinaryExpressionType.And:
-				Result.Append("float(");
+				Result.Append("float(bool(");
 				EncapsulateNoValue(expression.LeftExpression);
-				Result.Append("&& ");
+				Result.Append(") && bool(");
 				EncapsulateNoValue(expression.RightExpression);
-				Result.Append(") ");
+				Result.Append(")) ");
 				break;
 
 			case BinaryExpressionType.Or:
-				Result.Append("float(");
+				Result.Append("float(bool(");
 				EncapsulateNoValue(expression.LeftExpression);
-				Result.Append("|| ");
+				Result.Append(") || bool(");
 				EncapsulateNoValue(expression.RightExpression);
-				Result.Append(") ");
+				Result.Append(")) ");
 				break;
 
 			case BinaryExpressionType.Equal:
@@ -62,7 +62,7 @@ public class GLSLVisitor : SerializationVisitor
 			case BinaryExpressionType.GreaterOrEqual:
 				Result.Append("float(");
 				EncapsulateNoValue(expression.LeftExpression);
-				Result.Append(">= ");
+				Result.Append(" + " + m_epsilon + " >= ");
 				EncapsulateNoValue(expression.RightExpression);
 				Result.Append(") ");
 				break;
@@ -78,7 +78,7 @@ public class GLSLVisitor : SerializationVisitor
 			case BinaryExpressionType.LesserOrEqual:
 				Result.Append("float(");
 				EncapsulateNoValue(expression.LeftExpression);
-				Result.Append("<= ");
+				Result.Append(" - " + m_epsilon + " <= ");
 				EncapsulateNoValue(expression.RightExpression);
 				Result.Append(") ");
 				break;
