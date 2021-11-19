@@ -1,6 +1,7 @@
 using NCalc.Domain;
 using System;
 using System.Linq;
+using UnityEngine.Assertions;
 
 
 public class GLSLVisitor : SerializationVisitor
@@ -114,7 +115,7 @@ public class GLSLVisitor : SerializationVisitor
 
 	public override void Visit(Function function)
 	{
-		RandomizationFunction funcOption = Array.Find(RandomizationFunction.m_list, funcOption => funcOption.m_name.ToLower() == function.Identifier.Name.ToLower() && funcOption.m_glslConverter != null);
+		RandomizationFunction funcOption = Array.Find(RandomizationFunction.m_list, funcOption => funcOption.m_name.ToLower() == function.Identifier.Name.ToLower() && funcOption.m_paramCount == function.Expressions.Length && funcOption.m_glslConverter != null);
 		if (funcOption == null || funcOption.m_glslConverter == null)
 		{
 			base.Visit(function);
@@ -127,6 +128,7 @@ public class GLSLVisitor : SerializationVisitor
 			lExp.Accept(argVisitor);
 			return argVisitor.Result.ToString();
 		}).ToArray();
+		Assert.AreEqual(args.Length, funcOption.m_paramCount);
 		Result.Append(funcOption.m_glslConverter(args));
 	}
 

@@ -31,8 +31,8 @@ public class RandomizationFunction
 		new RandomizationFunction("Floor"),
 		new RandomizationFunction("IEEERemainder", 2, args => "(" + FormatArg(args.First()) + " - (" + FormatArg(args[1]) + " * round(" + FormatArg(args.First()) + " / " + FormatArg(args[1]) + "))) "),
 		//new RandomizationFunction("Ln", 1, args => "log" + FormatArg(args.First()) + " "), // TODO: update NCalc.dll to include the newest code to support this?
-		new RandomizationFunction("Log", 2, args => "(log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") "),
-		new RandomizationFunction("Log10", 1, args => "(log" + FormatArg(args.First()) + " / log(10.0)) "),
+		new RandomizationFunction("Log", 2, args => "(" + FormatArg(args.First()) + " <= 0.0 || " + FormatArg(args[1]) + " <= 0.0 ? (" + FormatArg(args[1]) + " == 0.0 ? 0.0 : (" + FormatArg(args[1]) + " < 1.0 ? 3.402823e+38 : -3.402823e+38)) : log" + FormatArg(args.First()) + " / log" + FormatArg(args[1]) + ") ", false),
+		new RandomizationFunction("Log10", 1, args => "(" + FormatArg(args.First()) + " <= 0.0 ? -3.402823e+38 : log" + FormatArg(args.First()) + " / log(10.0)) ", false),
 		new RandomizationFunction("Pow", 2),
 		new RandomizationFunction("Round", 2, args => "(round(" + FormatArg(args.First()) + " * pow(10.0, " + FormatArg(args[1]) + ")) / pow(10.0, " + FormatArg(args[1]) + ")) "),
 		new RandomizationFunction("Sign"),
