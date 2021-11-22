@@ -24,6 +24,8 @@ public class ExpressionShader
 	private string m_fragShaderPrev;
 
 
+	private static readonly string[] m_builtinParamNames = { "x", "y", "t" };
+
 #if (UNITY_IPHONE || UNITY_WEBGL) && !UNITY_EDITOR // TODO: differentiate between GLES 2 and 3 web platforms?
 	private const string m_glslVersionDecl = "#version 300 es\n";
 	private const string m_vertOutputType = "out"; // for ES2: "varying"
@@ -111,10 +113,10 @@ public class ExpressionShader
 	public string[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramsRaw)
 	{
 		// evaluate raw strings into expressions
-		string[] paramNames = paramsRaw?.Select(tuple => tuple.Item1).ToArray();
+		IEnumerable<string> paramNames = paramsRaw?.Select(tuple => tuple.Item1).Concat(m_builtinParamNames);
 		List<string> errorList = new List<string>();
-		errorList.AddRange(ExpressionsFromStrings(expressionsRaw, m_expressionsPrev, paramNames, str => str, (exp, input) => exp, out Expression[] expressions));
-		errorList.AddRange(ExpressionsFromStrings(paramsRaw, m_paramsPrev, paramNames, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramsCur));
+		errorList.AddRange(ExpressionsFromStrings(expressionsRaw, m_expressionsPrev, input => null, str => str, (exp, input) => exp, out Expression[] expressions));
+		errorList.AddRange(ExpressionsFromStrings(paramsRaw, m_paramsPrev, input => string.IsNullOrEmpty(input.Item1) || paramNames.Count(str => str == input.Item1) == 1 ? null : "Duplicate param name: " + input.Item1, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramsCur));
 
 		// early-out if nothing to update
 		// TODO: compare against previous expressions?
@@ -132,8 +134,13 @@ public class ExpressionShader
 		if (paramsCur != null || m_paramsPrev != null)
 		{
 			// TODO: order param definitions to deliberately support iteration? break into pieces to support recursion?
-			foreach (ValueTuple<string, Expression> tuple in ZipSafe(paramsCur, m_paramsPrev, (tuple, tuplePrev) => tuple.Item1 != null && tuple.Item2 != null ? tuple : tuplePrev, false, true).Where(tuple => !string.IsNullOrEmpty(tuple.Item1) && tuple.Item2 != null))
+			IEnumerable<string> expressionUsedParams = expressions.Where(exp => exp != null).SelectMany(exp => exp.Parameters.Keys).Concat(paramsCur.Where(param => param.Item2 != null).SelectMany(param => param.Item2.Parameters.Keys)); // TODO: cull duplicates?
+			foreach (ValueTuple<string, Expression> tuple in paramsCur)
 			{
+				if (tuple.Item1 == null || !expressionUsedParams.Contains(tuple.Item1))
+				{
+					continue; // this param is unused; cull from shader for efficiency and to avoid needless resets
+				}
 				shaderStrFrag += "	float " + tuple.Item1 + " = " + FormatExpressionString(tuple.Item2) + ";\n";
 			}
 		}
@@ -141,8 +148,7 @@ public class ExpressionShader
 		shaderStrFrag += "	" + m_fragOutputName + " = vec4(";
 
 		// parse RGB expressions
-		Expression[] expressionsFinal = ZipSafe(expressions, m_expressionsPrev, (exp, expPrev) => exp == null && expPrev == null ? null : (exp ?? expPrev), false, true).ToArray();
-		foreach (Expression exp in expressionsFinal)
+		foreach (Expression exp in expressions)
 		{
 			shaderStrFrag += "inverseLerp(" + Utility.FormatFloatGLSL(m_outMin) + ", " + Utility.FormatFloatGLSL(m_outMax) + ", ";
 			shaderStrFrag += exp == null ? "0.0" : FormatExpressionString(exp);
@@ -183,31 +189,28 @@ public class ExpressionShader
 	}
 
 
-	private static List<string> ExpressionsFromStrings<T1, T2>(T1[] inputRaw, T2[] prevValues, string[] paramNames, Func<T1, string> inputToExpStr, Func<Expression, T1, T2> expToOutput, out T2[] output)
+	private static List<string> ExpressionsFromStrings<T1, T2>(T1[] inputRaw, T2[] prevValues, Func<T1, string> inputIsDuplicate, Func<T1, string> inputToExpStr, Func<Expression, T1, T2> expToOutput, out T2[] output)
 	{
 		List<string> errorList = new List<string>();
 		output = ZipSafe(inputRaw, prevValues, (input, prevValue) =>
 		{
+			string duplicateError = inputIsDuplicate(input);
+			if (duplicateError != null)
+			{
+				errorList.Add(duplicateError);
+				return prevValue;
+			}
 			string text = inputToExpStr(input);
 			Expression expNew = new Expression(string.IsNullOrEmpty(text) ? "0.0" : text, EvaluateOptions.IgnoreCase);
-			expNew.Parameters.Add("t", 0.0f);
-			expNew.Parameters.Add("x", 0.0f);
-			expNew.Parameters.Add("y", 0.0f);
-			if (paramNames != null)
-			{
-				foreach (string paramName in paramNames.Where(name => !string.IsNullOrEmpty(name)))
-				{
-					if (expNew.Parameters.ContainsKey(paramName))
-					{
-						errorList.Add("Duplicate param name: " + paramName);
-						return prevValue;
-					}
-					expNew.Parameters.Add(paramName, 0.0f);
-				}
-			}
 			bool hasErrors = expNew.HasErrors(); // this also compiles the expression into Expression.ParsedExpression, which is what we actually use later
 			if (!hasErrors)
 			{
+				ParameterVisitor visitor = new ParameterVisitor();
+				expNew.ParsedExpression.Accept(visitor);
+				foreach (string name in visitor.Parameters)
+				{
+					expNew.Parameters.Add(name, 0.0f);
+				}
 				errorList.Add(null);
 				return expToOutput(expNew, input);
 			}
@@ -258,7 +261,7 @@ public class ExpressionShader
 			case ExpressionType.ValueExpression:
 			{
 				// enumerate valid values/parameters
-				List<LogicalExpression> values = new List<LogicalExpression>(new LogicalExpression[] { new ValueExpression(UnityEngine.Random.value * 2.0f), new Identifier("x"), new Identifier("y"), new Identifier("t") }); // TODO: base scalar value range on parent/sibling expression type?
+				List<LogicalExpression> values = new List<LogicalExpression>(new LogicalExpression[] { new ValueExpression(UnityEngine.Random.value * 2.0f) }).Concat(m_builtinParamNames.Select(name => new Identifier(name))).ToList(); // TODO: base scalar value range on parent/sibling expression type?
 				IEnumerable<string> paramsCulled = paramsRaw.Where(nameExp => !string.IsNullOrEmpty(nameExp.Item1)).Select(nameExp => nameExp.Item1); // TODO: check whether expression string is valid? chance to create/remove parameters?
 				values.AddRange(paramsCulled.Select(name => new Identifier(name)));
 
