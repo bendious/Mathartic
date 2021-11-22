@@ -115,8 +115,8 @@ public class ExpressionShader
 		// evaluate raw strings into expressions
 		IEnumerable<string> paramNames = paramsRaw?.Select(tuple => tuple.Item1).Concat(m_builtinParamNames);
 		List<string> errorList = new List<string>();
-		errorList.AddRange(ExpressionsFromStrings(expressionsRaw, m_expressionsPrev, input => null, str => str, (exp, input) => exp, out Expression[] expressions));
-		errorList.AddRange(ExpressionsFromStrings(paramsRaw, m_paramsPrev, input => string.IsNullOrEmpty(input.Item1) || paramNames.Count(str => str == input.Item1) == 1 ? null : "Duplicate param name: " + input.Item1, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramsCur));
+		errorList.AddRange(ExpressionsFromStrings(expressionsRaw, m_expressionsPrev, input => null, paramNames, str => str, (exp, input) => exp, out Expression[] expressions));
+		errorList.AddRange(ExpressionsFromStrings(paramsRaw, m_paramsPrev, input => input.Item1, paramNames, pair => pair.Item2, (exp, input) => (input.Item1, exp), out ValueTuple<string, Expression>[] paramsCur));
 
 		// early-out if nothing to update
 		// TODO: compare against previous expressions?
@@ -194,15 +194,15 @@ public class ExpressionShader
 	}
 
 
-	private static List<string> ExpressionsFromStrings<T1, T2>(T1[] inputRaw, T2[] prevValues, Func<T1, string> inputIsDuplicate, Func<T1, string> inputToExpStr, Func<Expression, T1, T2> expToOutput, out T2[] output)
+	private static List<string> ExpressionsFromStrings<T1, T2>(T1[] inputRaw, T2[] prevValues, Func<T1, string> inputToName, IEnumerable<string> paramNames, Func<T1, string> inputToExpStr, Func<Expression, T1, T2> expToOutput, out T2[] output)
 	{
 		List<string> errorList = new List<string>();
 		output = ZipSafe(inputRaw, prevValues, (input, prevValue) =>
 		{
-			string duplicateError = inputIsDuplicate(input);
-			if (duplicateError != null)
+			string inputName = inputToName(input);
+			if (!string.IsNullOrEmpty(inputName) && paramNames.Count(str => str == inputName) != 1)
 			{
-				errorList.Add(duplicateError);
+				errorList.Add("Duplicate param name: " + inputName);
 				return prevValue;
 			}
 			string text = inputToExpStr(input);
@@ -214,6 +214,11 @@ public class ExpressionShader
 				expNew.ParsedExpression.Accept(visitor);
 				foreach (string name in visitor.Parameters)
 				{
+					if (!paramNames.Contains(name))
+					{
+						errorList.Add("Missing param: " + name);
+						return prevValue;
+					}
 					expNew.Parameters.Add(name, 0.0f);
 				}
 				errorList.Add(null);
