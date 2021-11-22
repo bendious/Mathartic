@@ -92,7 +92,7 @@ public class ExpressionShaderUI : MonoBehaviour
 				continue; // ignore placeholder object
 			}
 
-			// TODO: don't assume objects will always be set up w/ children ordered as ({NameField}, {StaticText}, {ExpressionField}, {ErrorText})?
+			// TODO: don't assume objects will always be set up w/ children ordered as ({RemoveButton}, {NameField}, {StaticText}, {ExpressionField}, {ErrorText})?
 			InputField[] inputFields = child.GetComponentsInChildren<InputField>();
 			Assert.IsTrue(inputFields.Length == 2);
 			paramFieldsList.Add((inputFields.First(), inputFields.Last(), child.GetComponentsInChildren<Text>().Last()));

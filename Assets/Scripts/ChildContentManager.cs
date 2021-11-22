@@ -23,17 +23,21 @@ public class ChildContentManager : MonoBehaviour
 		RefitHeight(Mathf.Abs(childPosLocal.y) + childHeight);
 	}
 
-	public void Remove()
+	public void Remove(GameObject objectToRemove)
 	{
+		Assert.AreEqual(objectToRemove.transform.parent, transform); // invalid input
 		int visibleChildCount = transform.childCount - 1;
-		if (visibleChildCount < 1) // don't destroy placeholder
+		Assert.IsTrue(visibleChildCount > 0 && objectToRemove.activeSelf); // don't destroy placeholder
+		objectToRemove.transform.SetParent(null); // since Destroy() doesn't take effect immediately, yet we want to re-list the scroll view's content immediately
+		Destroy(objectToRemove);
+
+		// reposition remaining objects
+		Vector3 childPosGlobal = transform.position;
+		float childHeight = objectToRemove.GetComponent<RectTransform>().rect.height;
+		for (int i = 1; i < visibleChildCount; ++i, childPosGlobal.y -= childHeight)
 		{
-			return;
+			transform.GetChild(i).position = childPosGlobal;
 		}
-		GameObject lastChild = transform.GetChild(visibleChildCount).gameObject;
-		Assert.IsTrue(lastChild.activeSelf);
-		lastChild.transform.SetParent(null); // since Destroy() doesn't take effect immediately, yet we want to re-list the scroll view's content immediately
-		Destroy(lastChild);
 
 		RefitHeight((visibleChildCount - 1) * transform.GetChild(0).gameObject.GetComponent<RectTransform>().rect.height);
 	}
