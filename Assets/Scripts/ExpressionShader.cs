@@ -70,7 +70,7 @@ public class ExpressionShader
 		0.0f, // BitwiseNot
 	};
 	private static readonly float[] m_binaryExpressionWeights = { // TODO: discontinuous flag rather than assuming that half-weight means discontinuous?
-		0.0f, // And
+		0.0f, // And // NOTE that we don't enable AND/OR for randomization despite supporting it, since the subexpressions would almost always be true // TODO: logic to force boolean subexpressions?
 		0.0f, // Or
 		0.5f, // NotEqual
 		0.5f, // LesserOrEqual
