@@ -38,7 +38,7 @@ public class ExpressionShaderUI : MonoBehaviour
 	}
 
 
-	public void UpdateShader()
+	public void UpdateShader(bool noTimeReset)
 	{
 		// get expression strings
 		ValueTuple<InputField, Text>[] fieldPairs = { (m_rField, m_rErrorText), (m_gField, m_gErrorText), (m_bField, m_bErrorText) };
@@ -46,7 +46,7 @@ public class ExpressionShaderUI : MonoBehaviour
 		ValueTuple<string, string>[] paramsRaw = m_paramFields.Select(fields => (fields.Item1.text, fields.Item2.text)).ToArray();
 
 		// pass in for evaluation
-		string[] errors = m_internals.UpdateShader(expressionsRaw, paramsRaw);
+		string[] errors = m_internals.UpdateShader(expressionsRaw, paramsRaw, noTimeReset);
 		Assert.AreEqual(errors.Length, expressionsRaw.Length + paramsRaw.Length);
 
 		// update error messages
@@ -67,7 +67,18 @@ public class ExpressionShaderUI : MonoBehaviour
 
 		float.TryParse(m_equalityEpsilonField.text, out m_internals.m_epsilon);
 
-		UpdateShader(); // this will early-out if the shader is unchanged
+		UpdateShader(true); // this will early-out if the shader is unchanged
+	}
+
+	public void Zoom(bool inward)
+	{
+		float scalar = inward ? 0.5f : 2.0f;
+		m_xMinField.text = ScaleLimitAndStringify(m_internals.m_xMin, scalar);
+		m_xMaxField.text = ScaleLimitAndStringify(m_internals.m_xMax, scalar);
+		m_yMinField.text = ScaleLimitAndStringify(m_internals.m_yMin, scalar);
+		m_yMaxField.text = ScaleLimitAndStringify(m_internals.m_yMax, scalar);
+
+		UpdateLimits();
 	}
 
 	public void UpdateParamFields()
@@ -88,7 +99,7 @@ public class ExpressionShaderUI : MonoBehaviour
 		}
 		m_paramFields = paramFieldsList.ToArray();
 
-		UpdateShader(); // this will early-out if the shader is unchanged
+		UpdateShader(false); // this will early-out if the shader is unchanged
 	}
 
 	public void Randomize()
@@ -128,5 +139,12 @@ public class ExpressionShaderUI : MonoBehaviour
 		Assert.IsNotNull(field);
 		RectTransform tf = field.GetComponent<RectTransform>();
 		tf.sizeDelta = new Vector2(-(errorText.preferredWidth - errorText.GetComponent<RectTransform>().anchoredPosition.x + tf.anchoredPosition.x), tf.sizeDelta.y);
+	}
+
+	private string ScaleLimitAndStringify(float x, float scalar)
+	{
+		const float zoomMin = 0.01f; // due to input fields not understanding scientific notation, so small enough numbers would cause a jump back up
+		float xScaled = x * scalar;
+		return (xScaled < zoomMin && xScaled > -zoomMin ? zoomMin * (x < 0 ? -1 : 1) : xScaled).ToString();
 	}
 }

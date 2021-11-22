@@ -110,7 +110,7 @@ public class ExpressionShader
 	private static readonly float[] m_valueTypeWeights = { 0.1f, 1.0f, 1.0f, 2.0f };
 
 
-	public string[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramsRaw)
+	public string[] UpdateShader(string[] expressionsRaw, ValueTuple<string, string>[] paramsRaw, bool noTimeReset)
 	{
 		// evaluate raw strings into expressions
 		IEnumerable<string> paramNames = paramsRaw?.Select(tuple => tuple.Item1).Concat(m_builtinParamNames);
@@ -160,7 +160,12 @@ public class ExpressionShader
 		if (shaderStrFrag != m_fragShaderPrev)
 		{
 			// compile shader
-			Camera.main.GetComponent<RuntimeShader>().UpdateShader(m_shaderStrVert, shaderStrFrag);
+			RuntimeShader shaderComp = Camera.main.GetComponent<RuntimeShader>();
+			shaderComp.UpdateShader(m_shaderStrVert, shaderStrFrag);
+			if (!noTimeReset)
+			{
+				shaderComp.ResetTime();
+			}
 
 			m_expressionsPrev = expressions;
 			m_paramsPrev = paramsCur;
@@ -181,7 +186,7 @@ public class ExpressionShader
 		};
 
 		// update
-		UpdateShader(expsRandStrings, paramsRaw);
+		UpdateShader(expsRandStrings, paramsRaw, false);
 
 		// return strings for text fields
 		// TODO: detect & eliminate redundant parentheses?

@@ -44,7 +44,6 @@ public class RuntimeShader : MonoBehaviour
 		try
 		{
 			m_shaderReady = UpdateGLShader(srcDataVert, srcDataFrag);
-			ResetTime();
 		}
 		catch (Exception) { m_shaderReady = false; }
 	}
