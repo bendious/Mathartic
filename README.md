@@ -1,4 +1,8 @@
-Mathartic. Render your mathematics!
+### Mathartic. Render your mathematics!
+
+![Mathartic](https://user-images.githubusercontent.com/95231786/143908416-c3734f6d-c91f-44c8-a555-ea28e7c094ca.png)
+
+Web build at https://bendious.github.io/Mathartic
 
 Enter mathematical expressions to determine the R, G, and B components of each pixel. Expressions can use the built-in parameters x, y, and t, as well as any user-defined parameters added under Extra Param(s). Evaluation is not case-sensitive. Params can reference other params defined before them.
 
